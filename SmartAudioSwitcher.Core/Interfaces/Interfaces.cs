@@ -84,6 +84,8 @@ public interface IConfigurationService
     event EventHandler<AppSettings> SettingsChanged;
     string GetConfigPath();
     AppSettings GetDefaults();
+    void StartFileWatcher();
+    void StopFileWatcher();
 }
 
 public interface IHotkeyService

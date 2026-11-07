@@ -1,5 +1,6 @@
 using SmartAudioSwitcher.Core.Interfaces;
 using SmartAudioSwitcher.Core.Models;
+using Microsoft.Extensions.Logging;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 

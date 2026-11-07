@@ -1,0 +1,56 @@
+# Build outputs
+bin/
+obj/
+out/
+publish/
+
+# IDE
+.vs/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+
+# Logs
+*.log
+logs/
+
+# User-specific
+*.user
+*.suo
+
+# Test results
+TestResults/
+*.trx
+coverage/
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
+# Publish
+*.msix
+*.appx
+*.appxbundle
+
+# Local config
+appsettings.Development.json
+appsettings.Local.json
+
+# Rider
+*.sln.dotsettings
+
+# VS Code
+.vscode/
+!/.vscode/settings.json
+!/.vscode/tasks.json
+!/.vscode/launch.json
+!/.vscode/extensions.json
