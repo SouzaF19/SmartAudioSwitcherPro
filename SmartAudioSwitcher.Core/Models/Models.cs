@@ -52,15 +52,29 @@ public record DeviceRoutingRule(
     string DeviceTypePreference
 );
 
-public record Profile(
-    string Name,
-    List<ProfileTrigger> Triggers,
-    string DefaultDeviceType,
-    Dictionary<string, string> ProcessExceptions,
-    List<string> FallbackChain,
-    double? VolumeLimit,
-    bool Enabled
-);
+public class Profile
+{
+    public string Name { get; set; } = "";
+    public List<ProfileTrigger> Triggers { get; set; } = new();
+    public string DefaultDeviceType { get; set; } = "Speakers";
+    public Dictionary<string, string> ProcessExceptions { get; set; } = new();
+    public List<string> FallbackChain { get; set; } = new();
+    public double? VolumeLimit { get; set; }
+    public bool Enabled { get; set; } = true;
+
+    public Profile() { }
+
+    public Profile(string name, List<ProfileTrigger> triggers, string defaultDeviceType, Dictionary<string, string> processExceptions, List<string> fallbackChain, double? volumeLimit, bool enabled)
+    {
+        Name = name;
+        Triggers = triggers;
+        DefaultDeviceType = defaultDeviceType;
+        ProcessExceptions = processExceptions;
+        FallbackChain = fallbackChain;
+        VolumeLimit = volumeLimit;
+        Enabled = enabled;
+    }
+}
 
 public record AppRoutingEntry(
     int ProcessId,

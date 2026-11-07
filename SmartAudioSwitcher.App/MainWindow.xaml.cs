@@ -50,7 +50,7 @@ public partial class MainWindow : Window
     {
         Hide();
         _trayService.ShowNotification("SmartAudioSwitcher", "Running in background. Click tray icon to restore.", 
-            SmartAudioSwitcher.Core.Models.NotificationType.Info);
+            SmartAudioSwitcher.Core.Interfaces.NotificationType.Info);
     }
 
     public new void Show()

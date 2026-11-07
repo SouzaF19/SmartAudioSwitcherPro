@@ -2,9 +2,12 @@ using SmartAudioSwitcher.Core.Interfaces;
 using SmartAudioSwitcher.Core.Models;
 using SmartAudioSwitcher.Core.Services;
 using SmartAudioSwitcher.Platform.Services;
+using SmartAudioSwitcher.App.Services;
+using SmartAudioSwitcher.App.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Windows;
 
 namespace SmartAudioSwitcher.App;
 
@@ -119,7 +122,7 @@ public class Program
             if (!mainWindow.IsVisible)
             {
                 mainWindow.Show();
-                mainWindow.WindowState = WindowState.Normal;
+                mainWindow.WindowState = System.Windows.WindowState.Normal;
                 mainWindow.Activate();
             }
             else

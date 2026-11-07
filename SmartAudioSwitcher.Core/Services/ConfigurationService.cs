@@ -47,7 +47,6 @@ public class ConfigurationService : IConfigurationService
             var yaml = File.ReadAllText(_configPath);
             var settings = _deserializer.Deserialize<AppSettings>(yaml);
             
-            // Merge with defaults to ensure all properties exist
             settings = MergeWithDefaults(settings);
             
             _cachedSettings = settings;
@@ -99,9 +98,10 @@ public class ConfigurationService : IConfigurationService
     {
         return new List<Profile>
         {
-            new Profile(
-                Name: "Gaming",
-                Triggers: new List<ProfileTrigger>
+            new Profile
+            {
+                Name = "Gaming",
+                Triggers = new List<ProfileTrigger>
                 {
                     new(ProfileTriggerType.ProcessMatch, "*game*", null),
                     new(ProfileTriggerType.ProcessMatch, "steam.exe", null),
@@ -111,8 +111,8 @@ public class ConfigurationService : IConfigurationService
                     new(ProfileTriggerType.ProcessMatch, "goggalaxy.exe", null),
                     new(ProfileTriggerType.WindowTitleMatch, "* - Steam", null)
                 },
-                DefaultDeviceType: "speakers",
-                ProcessExceptions: new Dictionary<string, string>
+                DefaultDeviceType = "speakers",
+                ProcessExceptions = new Dictionary<string, string>
                 {
                     ["Discord.exe"] = "headset",
                     ["TeamSpeak*"] = "headset",
@@ -122,19 +122,20 @@ public class ConfigurationService : IConfigurationService
                     ["OBS*.exe"] = "headset",
                     ["Streamlabs*"] = "headset"
                 },
-                FallbackChain: new List<string> { "headset", "hdmi", "system_default" },
-                VolumeLimit: null,
-                Enabled: true
-            ),
-            new Profile(
-                Name: "Work Hours",
-                Triggers: new List<ProfileTrigger>
+                FallbackChain = new List<string> { "headset", "hdmi", "system_default" },
+                VolumeLimit = null,
+                Enabled = true
+            },
+            new Profile
+            {
+                Name = "Work Hours",
+                Triggers = new List<ProfileTrigger>
                 {
                     new(ProfileTriggerType.TimeBetween, "09:00-18:00", null),
                     new(ProfileTriggerType.DockedState, "true", null)
                 },
-                DefaultDeviceType: "hdmi",
-                ProcessExceptions: new Dictionary<string, string>
+                DefaultDeviceType = "hdmi",
+                ProcessExceptions = new Dictionary<string, string>
                 {
                     ["Teams.exe"] = "headset",
                     ["Zoom.exe"] = "headset",
@@ -142,48 +143,51 @@ public class ConfigurationService : IConfigurationService
                     ["Skype*"] = "headset",
                     ["Slack.exe"] = "headset"
                 },
-                FallbackChain: new List<string> { "speakers", "headset", "system_default" },
-                VolumeLimit: null,
-                Enabled: true
-            ),
-            new Profile(
-                Name: "Night Mode",
-                Triggers: new List<ProfileTrigger>
+                FallbackChain = new List<string> { "speakers", "headset", "system_default" },
+                VolumeLimit = null,
+                Enabled = true
+            },
+            new Profile
+            {
+                Name = "Night Mode",
+                Triggers = new List<ProfileTrigger>
                 {
                     new(ProfileTriggerType.TimeBetween, "22:00-07:00", null)
                 },
-                DefaultDeviceType: "headset",
-                ProcessExceptions: new Dictionary<string, string>(),
-                FallbackChain: new List<string> { "speakers", "system_default" },
-                VolumeLimit: 0.4,
-                Enabled: true
-            ),
-            new Profile(
-                Name: "Presentation",
-                Triggers: new List<ProfileTrigger>
+                DefaultDeviceType = "headset",
+                ProcessExceptions = new Dictionary<string, string>(),
+                FallbackChain = new List<string> { "speakers", "system_default" },
+                VolumeLimit = 0.4,
+                Enabled = true
+            },
+            new Profile
+            {
+                Name = "Presentation",
+                Triggers = new List<ProfileTrigger>
                 {
                     new(ProfileTriggerType.ProcessMatch, "POWERPNT.EXE", null),
                     new(ProfileTriggerType.WindowTitleMatch, "* - PowerPoint", null),
                     new(ProfileTriggerType.ProcessMatch, "WINWORD.EXE", null)
                 },
-                DefaultDeviceType: "hdmi",
-                ProcessExceptions: new Dictionary<string, string>(),
-                FallbackChain: new List<string> { "speakers", "system_default" },
-                VolumeLimit: null,
-                Enabled: true
-            ),
-            new Profile(
-                Name: "Default",
-                Triggers: new List<ProfileTrigger>
+                DefaultDeviceType = "hdmi",
+                ProcessExceptions = new Dictionary<string, string>(),
+                FallbackChain = new List<string> { "speakers", "system_default" },
+                VolumeLimit = null,
+                Enabled = true
+            },
+            new Profile
+            {
+                Name = "Default",
+                Triggers = new List<ProfileTrigger>
                 {
                     new(ProfileTriggerType.Always, null, null)
                 },
-                DefaultDeviceType: "speakers",
-                ProcessExceptions: new Dictionary<string, string>(),
-                FallbackChain: new List<string> { "headset", "hdmi", "system_default" },
-                VolumeLimit: null,
-                Enabled: true
-            )
+                DefaultDeviceType = "speakers",
+                ProcessExceptions = new Dictionary<string, string>(),
+                FallbackChain = new List<string> { "headset", "hdmi", "system_default" },
+                VolumeLimit = null,
+                Enabled = true
+            }
         };
     }
 
@@ -191,14 +195,12 @@ public class ConfigurationService : IConfigurationService
     {
         var defaults = GetDefaults();
         
-        // Ensure all collections are initialized
         loaded.General ??= defaults.General;
         loaded.Devices ??= defaults.Devices;
         loaded.Profiles ??= defaults.Profiles;
         loaded.Hotkeys ??= defaults.Hotkeys;
         loaded.Api ??= defaults.Api;
 
-        // Merge device patterns (keep user patterns, add missing defaults)
         MergePatterns(loaded.Devices.HeadsetPatterns, defaults.Devices.HeadsetPatterns);
         MergePatterns(loaded.Devices.SpeakersPatterns, defaults.Devices.SpeakersPatterns);
         MergePatterns(loaded.Devices.HdmiPatterns, defaults.Devices.HdmiPatterns);
@@ -251,7 +253,6 @@ public class ConfigurationService : IConfigurationService
 
     private void OnConfigChanged(object sender, FileSystemEventArgs e)
     {
-        // Debounce rapid changes
         Task.Delay(500).ContinueWith(_ =>
         {
             try
