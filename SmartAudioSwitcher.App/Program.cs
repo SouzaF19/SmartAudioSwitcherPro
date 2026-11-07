@@ -34,6 +34,7 @@ public class Program
         builder.Services.AddSingleton<IProcessMonitorService, ProcessMonitorService>();
         builder.Services.AddSingleton<IHotkeyService, HotkeyService>();
         builder.Services.AddSingleton<ISystemTrayService, SystemTrayService>();
+        builder.Services.AddSingleton<ILocalizationService, LocalizationService>();
         
         // Register UI services
         builder.Services.AddSingleton<MainWindowViewModel>();
@@ -48,6 +49,9 @@ public class Program
         var configService = host.Services.GetRequiredService<IConfigurationService>();
         var settings = configService.LoadSettings();
         configService.StartFileWatcher();
+
+        var localizationService = host.Services.GetRequiredService<ILocalizationService>();
+        localizationService.SetLanguage(settings.General.Language);
         
         var profileEngine = host.Services.GetRequiredService<IProfileEngine>();
         profileEngine.ReloadConfiguration(settings);

@@ -17,4 +17,9 @@
     <ProjectReference Include="..\SmartAudioSwitcher.Core\SmartAudioSwitcher.Core.csproj" />
   </ItemGroup>
 
+    <ItemGroup>
+        <None Update="Locales\*.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
 </Project>

@@ -14,6 +14,7 @@ public class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly IConfigurationService _configService;
+    private readonly ILocalizationService _localizationService;
     
     private ObservableCollection<DeviceViewModel> _devices = new();
     private ObservableCollection<RoutingViewModel> _activeRouting = new();
@@ -22,10 +23,11 @@ public class MainWindowViewModel : INotifyPropertyChanged
     private string _statusText = "Starting...";
     private bool _isRunning = true;
 
-    public MainWindowViewModel(ILogger<MainWindowViewModel> logger, IConfigurationService configService)
+    public MainWindowViewModel(ILogger<MainWindowViewModel> logger, IConfigurationService configService, ILocalizationService localizationService)
     {
         _logger = logger;
         _configService = configService;
+        _localizationService = localizationService;
         
         LoadData();
     }
@@ -65,6 +67,8 @@ public class MainWindowViewModel : INotifyPropertyChanged
         get => _isRunning;
         set => SetField(ref _isRunning, value);
     }
+
+    public ILocalizationService Localization => _localizationService;
 
     public ICommand RefreshCommand => new RelayCommand(LoadData);
     public ICommand OpenSettingsCommand => new RelayCommand(OpenSettings);

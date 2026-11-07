@@ -139,7 +139,7 @@ public class GeneralSettings
     public bool StartMinimized { get; set; } = true;
     public bool CheckUpdates { get; set; } = true;
     public string LogLevel { get; set; } = "Information";
-    public string Language { get; set; } = "en";
+    public string Language { get; set; } = "en-US";
 }
 
 public class DeviceMatchingSettings
