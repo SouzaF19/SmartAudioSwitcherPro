@@ -1,0 +1,87 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Users\\anton.SOUZA.000\\SmartAudioSwitcherPro\\SmartAudioSwitcher.UI\\SmartAudioSwitcher.UI.csproj": {}
+  },
+  "projects": {
+    "C:\\Users\\anton.SOUZA.000\\SmartAudioSwitcherPro\\SmartAudioSwitcher.UI\\SmartAudioSwitcher.UI.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\anton.SOUZA.000\\SmartAudioSwitcherPro\\SmartAudioSwitcher.UI\\SmartAudioSwitcher.UI.csproj",
+        "projectName": "SmartAudioSwitcher.UI",
+        "projectPath": "C:\\Users\\anton.SOUZA.000\\SmartAudioSwitcherPro\\SmartAudioSwitcher.UI\\SmartAudioSwitcher.UI.csproj",
+        "packagesPath": "C:\\Users\\anton.SOUZA.000\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\anton.SOUZA.000\\SmartAudioSwitcherPro\\SmartAudioSwitcher.UI\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\anton.SOUZA.000\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0-windows"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0-windows7.0": {
+            "targetAlias": "net8.0-windows",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0-windows7.0": {
+          "targetAlias": "net8.0-windows",
+          "dependencies": {
+            "Hardcodet.Wpf.TaskbarNotification": {
+              "target": "Package",
+              "version": "[1.0.5, )"
+            },
+            "MaterialDesignThemes": {
+              "target": "Package",
+              "version": "[5.4.0, )"
+            },
+            "Microsoft.Extensions.DependencyInjection": {
+              "target": "Package",
+              "version": "[10.0.14, )"
+            },
+            "Microsoft.Extensions.Hosting": {
+              "target": "Package",
+              "version": "[10.0.14, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            },
+            "Microsoft.WindowsDesktop.App.WPF": {
+              "privateAssets": "none"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.427/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "dgSpecHash": "GjJ/wKXryJ0=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\anton.SOUZA.000\\SmartAudioSwitcherPro\\SmartAudioSwitcher.Core\\SmartAudioSwitcher.Core.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\anton.SOUZA.000\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\10.0.14\\microsoft.extensions.dependencyinjection.abstractions.10.0.14.nupkg.sha512",
+    "C:\\Users\\anton.SOUZA.000\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\10.0.14\\microsoft.extensions.logging.abstractions.10.0.14.nupkg.sha512",
+    "C:\\Users\\anton.SOUZA.000\\.nuget\\packages\\microsoft.extensions.options\\10.0.14\\microsoft.extensions.options.10.0.14.nupkg.sha512",
+    "C:\\Users\\anton.SOUZA.000\\.nuget\\packages\\microsoft.extensions.primitives\\10.0.14\\microsoft.extensions.primitives.10.0.14.nupkg.sha512",
+    "C:\\Users\\anton.SOUZA.000\\.nuget\\packages\\system.diagnostics.diagnosticsource\\10.0.14\\system.diagnostics.diagnosticsource.10.0.14.nupkg.sha512",
+    "C:\\Users\\anton.SOUZA.000\\.nuget\\packages\\yamldotnet\\18.1.0\\yamldotnet.18.1.0.nupkg.sha512"
+  ],
+  "logs": []
+}
