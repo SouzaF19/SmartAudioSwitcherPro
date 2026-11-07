@@ -349,7 +349,6 @@ tests/
 - 🐛 [Fix device name matching for virtual cables (VB-Cable, Voicemeeter)](https://github.com/SouzaF19/SmartAudioSwitcherPro/issues?q=label%3A%22good+first+issue%22)
 - 📝 [Add configuration schema validation with helpful errors](https://github.com/SouzaF19/SmartAudioSwitcherPro/issues?q=label%3A%22good+first+issue%22)
 - 🎨 [Improve dashboard device icons (SVG → colored per type)](https://github.com/SouzaF19/SmartAudioSwitcherPro/issues?q=label%3A%22good+first+issue%22)
-- 🌐 [Add Portuguese/Chinese/Spanish localization](https://github.com/SouzaF19/SmartAudioSwitcherPro/issues?q=label%3A%22good+first+issue%22)
 
 ### Pull Request Process
 1. Fork → Create branch (`feat/awesome-feature` or `fix/annoying-bug`)
