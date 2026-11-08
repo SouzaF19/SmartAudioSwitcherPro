@@ -2,7 +2,7 @@
   <img src="assets/logo.png" alt="SmartAudioSwitcher Logo" width="120" height="120">
 </p>
 
-<h1 align="center">SmartAudioSwitcher</h1>
+<h1 align="center">SmartAudioSwitcher Pro</h1>
 
 <p align="center">
   <strong>🎵 Intelligent Windows Audio Device Switcher</strong><br>
@@ -42,7 +42,7 @@
 
 ## 🎯 The Problem
 
-Windows audio management is **surprisingly primitive** in 2024:
+Windows audio management is **surprisingly primitive**:
 
 | Scenario | Windows Behavior | User Pain |
 |----------|------------------|-----------|
@@ -113,7 +113,7 @@ profiles:
 
 ### 🛠️ Power User Features
 - **CLI control** — `saswitch set-device "Headset"` for scripts/shortcuts
-- **REST API** — Local HTTP API for integration with Stream Deck, Home Assistant, etc.
+- **REST API** — Local HTTP API for Stream Deck, Home Assistant, etc.
 - **Audio metering** — Visual feedback in tray (optional)
 - **Hotkeys** — Global shortcuts for quick device cycling
 - **Logging** — Structured logs for debugging
@@ -194,41 +194,27 @@ Config file: `%APPDATA%\SmartAudioSwitcher\config.yaml`
 general:
   start_minimized: true
   check_updates: true
-  log_level: "Information"  # Debug, Information, Warning, Error
+  log_level: "Information"
 
 # Device matching (friendly names, partial match supported)
 devices:
-  headset:
-    - "Headset"
-    - "Headphones"
-    - "WH-1000XM"
-    - "G Pro"
-  speakers:
-    - "Speakers"
-    - "Realtek"
-    - "Audio"
-  hdmi:
-    - "HDMI"
-    - "Monitor"
-    - "Display"
+  headset: ["Headset", "Headphones", "WH-1000XM", "G Pro"]
+  speakers: ["Speakers", "Realtek", "Audio"]
+  hdmi: ["HDMI", "Monitor", "Display"]
 
 # Profiles evaluated in order; first match wins
 profiles:
   - name: "Gaming"
-    # Triggers: any condition matches
     when:
       - process_match: "*game*"
       - process_match: "steam.exe"
-      - window_title_match: "* - Steam"
     routing:
       default: "speakers"
       exceptions:
         - process: "Discord.exe"
           device: "headset"
-        - process: "TeamSpeak*"
-          device: "headset"
         - process: "chrome.exe"
-          device: "headset"  # Browser = voice/chat
+          device: "headset"
 
   - name: "Work Hours"
     when:
@@ -239,34 +225,30 @@ profiles:
       exceptions:
         - process: "Teams.exe"
           device: "headset"
-        - process: "Zoom.exe"
-          device: "headset"
 
   - name: "Night Mode"
     when:
       - time_between: "22:00-07:00"
     routing:
       default: "headset"
-      volume_limit: 0.4  # 40% max volume
+      volume_limit: 0.4
 
   - name: "Default"
-    when: []  # Catch-all
+    when: []
     routing:
       default: "speakers"
       fallback_chain: ["headset", "hdmi", "system_default"]
 
-# Hotkeys (global, use with caution)
 hotkeys:
   cycle_output: "Ctrl+Alt+O"
   toggle_mute: "Ctrl+Alt+M"
   force_headset: "Ctrl+Alt+H"
   open_dashboard: "Ctrl+Shift+A"
 
-# REST API (disabled by default)
 api:
   enabled: false
   port: 52841
-  allow_remote: false  # Only localhost if false
+  allow_remote: false
 ```
 
 ### Device Naming Tips
@@ -312,15 +294,13 @@ api:
 | **Audio API** | `NAudio` + `CoreAudio` (COM interop) | Device enumeration, endpoint control, session management |
 | **Device Events** | `ManagementEventWatcher` (WMI) | USB/Bluetooth/HDMI plug/unplug detection |
 | **Process Monitor** | `System.Diagnostics` + ETW | Real-time process start/end, window focus |
-| **UI** | `WPF` (Dashboard) + `Hardcodet.Wpf.TaskbarNotification` (Tray) | Modern, native-feeling interface |
+| **UI** | `WPF` + `Hardcodet.Wpf.TaskbarNotification` | Modern, native-feeling interface |
 | **Config** | `YamlDotNet` | Human-readable, version-controllable config |
 | **DI/Hosting** | `Microsoft.Extensions.Hosting` | Clean startup, lifecycle, logging |
 
 ---
 
 ## 🤝 Contributing
-
-We love contributions! Here's how to get started:
 
 ### Development Setup
 ```bash
@@ -363,16 +343,6 @@ tests/
 
 **MIT License** — Free for personal and commercial use.  
 See [LICENSE](LICENSE) for details.
-
-```
-MIT License
-
-Copyright (c) 2024 SmartAudioSwitcher Contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction...
-```
 
 ---
 
