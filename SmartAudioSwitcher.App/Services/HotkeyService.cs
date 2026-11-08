@@ -77,7 +77,7 @@ public class HotkeyService : IHotkeyService, IDisposable
         return _hotkeys.ContainsKey(name);
     }
 
-    private void OnThreadPreprocessMessage(ref MSG msg, ref bool handled)
+    private void OnThreadPreprocessMessage(ref System.Windows.Interop.MSG msg, ref bool handled)
     {
         if (msg.message == WM_HOTKEY)
         {

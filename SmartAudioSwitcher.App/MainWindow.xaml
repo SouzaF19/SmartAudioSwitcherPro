@@ -6,6 +6,8 @@
         xmlns:local="clr-namespace:SmartAudioSwitcher.App"
         xmlns:vm="clr-namespace:SmartAudioSwitcher.App.ViewModels"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:controls="clr-namespace:SmartAudioSwitcher.UI.Controls;assembly=SmartAudioSwitcher.UI"
         mc:Ignorable="d"
         Title="SmartAudioSwitcher" Height="700" Width="1000"
         WindowStartupLocation="CenterScreen"
@@ -21,11 +23,11 @@
         Closing="Window_Closing"
         StateChanged="Window_StateChanged"
         Loaded="Window_Loaded">
-
+    
     <Window.DataContext>
         <vm:MainWindowViewModel />
     </Window.DataContext>
-
+    
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         
@@ -49,23 +51,20 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    
                     <TextBlock Text="{Binding TypeIcon}" FontSize="28" VerticalAlignment="Center" Margin="0,0,12,0" />
-                    
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock Text="{Binding FriendlyName}" FontWeight="Medium" FontSize="14" />
                         <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{DynamicResource MaterialDesignBodyLight}" />
                     </StackPanel>
-                    
                     <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal">
                         <materialDesign:PackIcon Kind="CheckCircle" Foreground="{DynamicResource PrimaryHueMidBrush}" 
-                                Visibility="{Binding IsDefault, Converter={StaticResource BoolToVis}}" Margin="0,0,8,0" ToolTip="Default Device" />
+                                 Visibility="{Binding IsDefault, Converter={StaticResource BoolToVis}}" Margin="0,0,8,0" ToolTip="Default Device" />
                         <materialDesign:PackIcon Kind="MessageOutline" Foreground="{DynamicResource SecondaryHueMidBrush}" 
-                                Visibility="{Binding IsCommunicationsDefault, Converter={StaticResource BoolToVis}}" Margin="0,0,8,0" ToolTip="Communications Device" />
+                                 Visibility="{Binding IsCommunicationsDefault, Converter={StaticResource BoolToVis}}" Margin="0,0,8,0" ToolTip="Communications Device" />
                         <materialDesign:PackIcon Kind="CheckCircleOutline" Foreground="Green" 
-                                Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}" ToolTip="Connected" />
+                                 Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}" ToolTip="Connected" />
                         <materialDesign:PackIcon Kind="CloseCircleOutline" Foreground="Red" 
-                                Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}" ToolTip="Disconnected" />
+                                 Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}" ToolTip="Disconnected" />
                     </StackPanel>
                 </Grid>
             </Border>
@@ -79,19 +78,16 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    
                     <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
                         <materialDesign:PackIcon Kind="ArrowRightBold" VerticalAlignment="Center" Foreground="{DynamicResource PrimaryHueMidBrush}" Margin="0,0,4,0" />
                         <TextBlock Text="{Binding ProcessName}" FontWeight="Medium" VerticalAlignment="Center" />
                     </StackPanel>
-                    
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <materialDesign:PackIcon Kind="Speaker" VerticalAlignment="Center" Margin="0,0,4,0" />
                         <TextBlock Text="{Binding DeviceName}" VerticalAlignment="Center" />
                         <materialDesign:PackIcon Kind="AlertOutline" Foreground="Orange" VerticalAlignment="Center" Margin="8,0,0,0" 
-                                Visibility="{Binding IsFallback, Converter={StaticResource BoolToVis}}" ToolTip="Fallback device" />
+                                 Visibility="{Binding IsFallback, Converter={StaticResource BoolToVis}}" ToolTip="Fallback device" />
                     </StackPanel>
-                    
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="{Binding ProfileName}" FontSize="11" Foreground="{DynamicResource MaterialDesignBodyLight}" Margin="0,0,8,0" />
                         <TextBlock Text="{Binding TimeAgo}" FontSize="11" Foreground="{DynamicResource MaterialDesignBodyLight}" />
@@ -116,7 +112,6 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <materialDesign:PackIcon Kind="SpeakerWireless" Width="28" Height="28" Foreground="White" Margin="0,0,10,0" />
                     <StackPanel>
@@ -124,12 +119,10 @@
                         <TextBlock Text="Intelligent Audio Device Switcher" FontSize="11" Foreground="#BBFFFFFF" />
                     </StackPanel>
                 </StackPanel>
-
                 <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal">
                     <materialDesign:PackIcon Kind="CheckCircle" Foreground="LightGreen" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
                     <TextBlock Text="{Binding StatusText}" Foreground="White" FontSize="12" VerticalAlignment="Center" />
                 </StackPanel>
-
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Button Style="{StaticResource MaterialDesignToolButton}" ToolTip="Settings" Command="{Binding OpenSettingsCommand}">
                         <materialDesign:PackIcon Kind="Cog" Foreground="White" />
@@ -142,187 +135,34 @@
         </Border>
 
         <!-- Main Content -->
-        <TabControl Grid.Row="1" Style="{StaticResource MaterialDesignNavigatilRailTabControl}" Margin="16">
-            <!-- Dashboard Tab -->
-            <TabItem Header="Dashboard" Style="{StaticResource MaterialDesignNavigatilRailTabItem}">
-                
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
-                        <!-- Active Profile -->
-                        <Border Style="{StaticResource CardStyle}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                
-                                <materialDesign:PackIcon Kind="AccountGroup" Width="32" Height="32" VerticalAlignment="Center" 
-                                        Foreground="{DynamicResource PrimaryHueMidBrush}" Margin="0,0,16,0" />
-                                
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="Active Profile" FontSize="12" Foreground="{DynamicResource MaterialDesignBodyLight}" />
-                                    <TextBlock Text="{Binding ActiveProfile.Name, FallbackValue='Default'}" FontSize="18" FontWeight="SemiBold" />
-                                </StackPanel>
-                                
-                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal">
-                                    <materialDesign:PackIcon Kind="Speaker" VerticalAlignment="Center" Margin="0,0,4,0" />
-                                    <TextBlock Text="{Binding ActiveProfile.DefaultDeviceType, FallbackValue='speakers'}" FontWeight="Medium" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
 
-                        <!-- Devices Section -->
-                        <TextBlock Text="Audio Devices" Style="{StaticResource MaterialDesignHeadline6TextBlock}" Margin="0,0,0,8" />
-                        
-                        <ItemsControl ItemsSource="{Binding Devices}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                        </ItemsControl>
+            <!-- Sidebar -->
+            <Border Grid.Column="0" Background="{DynamicResource MaterialDesignCardBackground}" BorderBrush="{DynamicResource PrimaryHueMidBrush}" BorderThickness="0,0,1,0">
+                <StackPanel Margin="20">
+                    <TextBlock Text="SonicFlow" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource PrimaryHueMidBrush}" Margin="0,0,0,20"/>
+                    <Button x:Name="btnAddApp" Content="Add App Node" Margin="0,5" Style="{StaticResource MaterialDesignFlatButton}" HorizontalAlignment="Stretch"/>
+                    <Button x:Name="btnAddDevice" Content="Add Device Node" Margin="0,5" Style="{StaticResource MaterialDesignFlatButton}" HorizontalAlignment="Stretch"/>
+                    <Separator Margin="0,20"/>
+                    <TextBlock Text="Profile Actions" FontWeight="Medium" Margin="0,0,0,10"/>
+                    <Button x:Name="btnSaveProfile" Content="Save Profile" Margin="0,5" Style="{StaticResource MaterialDesignRaisedButton}" HorizontalAlignment="Stretch"/>
+                    <Button x:Name="btnLoadProfile" Content="Load Profile" Margin="0,5" Style="{StaticResource MaterialDesignFlatButton}" HorizontalAlignment="Stretch"/>
+                    <Button x:Name="btnClearCanvas" Content="Clear Canvas" Margin="0,5" Style="{StaticResource MaterialDesignFlatButton}" HorizontalAlignment="Stretch" Foreground="Red"/>
+                    <Separator Margin="0,20"/>
+                    <TextBlock Text="Saved Profiles" FontWeight="Medium" Margin="0,0,0,10"/>
+                    <ListBox x:Name="ProfileList" MouseDoubleClick="ProfileList_MouseDoubleClick"/>
+                </StackPanel>
+            </Border>
 
-                        <!-- Active Routing Section -->
-                        <TextBlock Text="Active Routing" Style="{StaticResource MaterialDesignHeadline6TextBlock}" Margin="0,16,0,8" />
-                        
-                        <Border Style="{StaticResource CardStyle}">
-                            <ItemsControl ItemsSource="{Binding ActiveRouting}" />
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-
-            <!-- Devices Tab -->
-            <TabItem Header="Devices" Style="{StaticResource MaterialDesignNavigatilRailTabItem}">
-                
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
-                        <TextBlock Text="All Audio Devices" Style="{StaticResource MaterialDesignHeadline6TextBlock}" Margin="0,0,0,8" />
-                        
-                        <Border Style="{StaticResource CardStyle}">
-                            <DataGrid ItemsSource="{Binding Devices}" AutoGenerateColumns="False" IsReadOnly="True" 
-                                    HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                                    RowHeight="40" ColumnHeaderHeight="36">
-                                <DataGrid.Columns>
-                                    <DataGridTemplateColumn Header="Type" Width="Auto">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <TextBlock Text="{Binding TypeIcon}" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Name" Binding="{Binding FriendlyName}" Width="*" />
-                                    <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="100" />
-                                    <DataGridTemplateColumn Header="Status" Width="180">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <materialDesign:PackIcon Kind="CheckCircle" Foreground="Green" Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}" Margin="0,0,4,0" />
-                                                    <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Roles" Width="180">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <materialDesign:PackIcon Kind="CheckCircle" Foreground="{DynamicResource PrimaryHueMidBrush}" Visibility="{Binding IsDefault, Converter={StaticResource BoolToVis}}" Margin="0,0,4,0" ToolTip="Default" />
-                                                    <materialDesign:PackIcon Kind="MessageOutline" Foreground="{DynamicResource SecondaryHueMidBrush}" Visibility="{Binding IsCommunicationsDefault, Converter={StaticResource BoolToVis}}" ToolTip="Communications" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-                                </DataGrid.Columns>
-                            </DataGrid>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-
-            <!-- Profiles Tab -->
-            <TabItem Header="Profiles" Style="{StaticResource MaterialDesignNavigatilRailTabItem}">
-                
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
-                        <TextBlock Text="Routing Profiles" Style="{StaticResource MaterialDesignHeadline6TextBlock}" Margin="0,0,0,8" />
-                        
-                        <ItemsControl ItemsSource="{Binding Profiles}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Style="{StaticResource CardStyle}" 
-                                            Background="{Binding IsActive, Converter={StaticResource BoolToVis}, ConverterParameter={DynamicResource PrimaryHueLightBrush}}"
-                                            BorderBrush="{Binding IsActive, Converter={StaticResource BoolToVis}, ConverterParameter={DynamicResource PrimaryHueMidBrush}}"
-                                            BorderThickness="{Binding IsActive, Converter={StaticResource BoolToVis}, ConverterParameter=2}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            
-                                            <materialDesign:PackIcon Grid.Column="0" Kind="CardAccountDetails" Width="28" Height="28" VerticalAlignment="Center" 
-                                                    Foreground="{DynamicResource PrimaryHueMidBrush}" Margin="0,0,16,0" />
-                                            
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" />
-                                                    <materialDesign:PackIcon Grid.Column="1" Kind="CheckCircle" Foreground="Green" Width="16" Height="16" VerticalAlignment="Center" Margin="8,0,0,0" Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}" ToolTip="Active" />
-                                                    <TextBlock Grid.Column="2" Text="ACTIVE" FontSize="10" FontWeight="Bold" Foreground="Green" VerticalAlignment="Center" Margin="4,0,0,0" Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}" />
-                                                </Grid>
-                                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                                    <materialDesign:PackIcon Kind="Speaker" Width="14" Height="14" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{DynamicResource MaterialDesignBodyLight}" />
-                                                    <TextBlock Text="{Binding DefaultDeviceType}" FontSize="12" Foreground="{DynamicResource MaterialDesignBodyLight}" Margin="0,0,16,0" />
-                                                    <materialDesign:PackIcon Kind="Layers" Width="14" Height="14" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{DynamicResource MaterialDesignBodyLight}" />
-                                                    <TextBlock Text="{Binding TriggerCount, StringFormat={} triggers}" FontSize="12" Foreground="{DynamicResource MaterialDesignBodyLight}" Margin="0,0,16,0" />
-                                                    <materialDesign:PackIcon Kind="Settings" Width="14" Height="14" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{DynamicResource MaterialDesignBodyLight}" />
-                                                    <TextBlock Text="{Binding ExceptionCount, StringFormat={} exceptions}" FontSize="12" Foreground="{DynamicResource MaterialDesignBodyLight}" />
-                                                </StackPanel>
-                                            </StackPanel>
-                                            
-                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal">
-                                                <materialDesign:PackIcon Kind="ToggleSwitch" Foreground="{Binding Enabled, Converter={StaticResource BoolToVis}, ConverterParameter={DynamicResource PrimaryHueMidBrush}}" 
-                                                        ToolTip="{Binding Enabled, Converter={StaticResource BoolToVis}, ConverterParameter='Enabled;Disabled'}" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-
-            <!-- Logs Tab -->
-            <TabItem Header="Logs" Style="{StaticResource MaterialDesignNavigatilRailTabItem}">
-                
-                <Border Style="{StaticResource CardStyle}" Margin="0">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-                        
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="Application Logs" Style="{StaticResource MaterialDesignSubtitle1TextBlock}" VerticalAlignment="Center" />
-                            <Button Style="{StaticResource MaterialDesignFlatButton}" Margin="16,0,0,0" Content="Clear" />
-                            <Button Style="{StaticResource MaterialDesignFlatButton}" Margin="8,0,0,0" Content="Export" />
-                        </StackPanel>
-                        
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                            <TextBlock Text="Logs will appear here..." FontFamily="Consolas" FontSize="11" 
-                                    Foreground="{DynamicResource MaterialDesignBodyLight}" TextWrapping="Wrap" />
-                        </ScrollViewer>
-                    </Grid>
-                </Border>
-            </TabItem>
-        </TabControl>
+            <!-- Routing Canvas Area -->
+            <controls:RoutingCanvas x:Name="MainCanvas" Grid.Column="1" Background="#1E1E1E">
+                <!-- Nodes will be added dynamically here -->
+            </controls:RoutingCanvas>
+        </Grid>
 
         <!-- Status Bar -->
         <Border Grid.Row="2" Background="{DynamicResource MaterialDesignBackground}" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,1,0,0" Padding="16,8">
@@ -332,12 +172,10 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                
                 <StackPanel Orientation="Horizontal">
                     <materialDesign:PackIcon Kind="InformationOutline" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
                     <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{DynamicResource MaterialDesignBodyLight}" VerticalAlignment="Center" />
                 </StackPanel>
-                
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
                     <TextBlock Text="v1.0.0" FontSize="11" Foreground="{DynamicResource MaterialDesignBodyLight}" VerticalAlignment="Center" Margin="0,0,16,0" />
                     <TextBlock Text="SmartAudioSwitcher Pro" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center" />
