@@ -36,6 +36,9 @@ public class Program
         builder.Services.AddSingleton<ISystemTrayService, SystemTrayService>();
         builder.Services.AddSingleton<ILocalizationService, LocalizationService>();
         
+        // Register SonicFlow Engine
+        builder.Services.AddSingleton<ISonicFlowEngine, SonicFlowEngine>();
+        
         // Register UI services
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();

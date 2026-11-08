@@ -4,14 +4,9 @@ using System.Windows.Shapes;
 using System.Windows.Media;
 using System.Windows.Input;
 using System.Collections.Generic;
+using SmartAudioSwitcher.Core.Models;
 
 namespace SmartAudioSwitcher.UI.Controls;
-
-public enum NodeType
-{
-    App,
-    Device
-}
 
 public class RoutingNode : UserControl
 {

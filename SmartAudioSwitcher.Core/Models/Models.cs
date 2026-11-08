@@ -1,5 +1,14 @@
 namespace SmartAudioSwitcher.Core.Models;
 
+/// <summary>
+/// Represents the type of node in the SonicFlow visual routing canvas
+/// </summary>
+public enum NodeType
+{
+    App,
+    Device
+}
+
 public enum DeviceType
 {
     Unknown,

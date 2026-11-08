@@ -148,6 +148,10 @@
                     <Button x:Name="btnAddApp" Content="Add App Node" Margin="0,5" Style="{StaticResource MaterialDesignFlatButton}" HorizontalAlignment="Stretch"/>
                     <Button x:Name="btnAddDevice" Content="Add Device Node" Margin="0,5" Style="{StaticResource MaterialDesignFlatButton}" HorizontalAlignment="Stretch"/>
                     <Separator Margin="0,20"/>
+                    <TextBlock Text="Actions" FontWeight="Medium" Margin="0,0,0,10"/>
+                    <Button x:Name="btnApplyRoutes" Content="Apply Routes" Margin="0,5" Style="{StaticResource MaterialDesignRaisedButton}" HorizontalAlignment="Stretch"/>
+                    <Button x:Name="btnRefreshNodes" Content="Refresh Nodes" Margin="0,5" Style="{StaticResource MaterialDesignFlatButton}" HorizontalAlignment="Stretch"/>
+                    <Separator Margin="0,10"/>
                     <TextBlock Text="Profile Actions" FontWeight="Medium" Margin="0,0,0,10"/>
                     <Button x:Name="btnSaveProfile" Content="Save Profile" Margin="0,5" Style="{StaticResource MaterialDesignRaisedButton}" HorizontalAlignment="Stretch"/>
                     <Button x:Name="btnLoadProfile" Content="Load Profile" Margin="0,5" Style="{StaticResource MaterialDesignFlatButton}" HorizontalAlignment="Stretch"/>

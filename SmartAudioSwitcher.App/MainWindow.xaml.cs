@@ -1,13 +1,15 @@
 ﻿using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Controls;
 using Microsoft.Extensions.Logging;
 using SmartAudioSwitcher.Core.Interfaces;
+using SmartAudioSwitcher.Core.Models;
 using SmartAudioSwitcher.UI.Controls;
 using System.Collections.Generic;
-using System.Windows.Controls;
 using System.IO;
 using System.Text.Json;
+using System.Linq;
 
 namespace SmartAudioSwitcher.App;
 
@@ -15,14 +17,30 @@ public partial class MainWindow : Window
 {
     private readonly ILogger<MainWindow> _logger;
     private readonly ISystemTrayService _trayService;
+    private readonly IAudioDeviceService _deviceService;
+    private readonly IAudioSessionService _sessionService;
+    private readonly IProcessMonitorService _processMonitor;
+    private readonly ISonicFlowEngine _sonicFlowEngine;
     private bool _isClosing = false;
     private int _nodeCounter = 0;
     private string _profileDirectory = string.Empty;
+    private RoutingNode? _connectionSourceNode = null;
 
-    public MainWindow(ILogger<MainWindow> logger, ISystemTrayService trayService)
+    public MainWindow(
+        ILogger<MainWindow> logger, 
+        ISystemTrayService trayService,
+        IAudioDeviceService deviceService,
+        IAudioSessionService sessionService,
+        IProcessMonitorService processMonitor,
+        ISonicFlowEngine sonicFlowEngine)
     {
         _logger = logger;
         _trayService = trayService;
+        _deviceService = deviceService;
+        _sessionService = sessionService;
+        _processMonitor = processMonitor;
+        _sonicFlowEngine = sonicFlowEngine;
+        
         InitializeComponent();
         
         this.ShowInTaskbar = true;
@@ -34,20 +52,26 @@ public partial class MainWindow : Window
         Directory.CreateDirectory(_profileDirectory);
 
         // Bind buttons to methods
-        var btnAddApp = this.FindName("btnAddApp") as System.Windows.Controls.Button;
+        var btnAddApp = this.FindName("btnAddApp") as Button;
         if (btnAddApp != null) btnAddApp.Click += AddAppNode_Click;
 
-        var btnAddDevice = this.FindName("btnAddDevice") as System.Windows.Controls.Button;
+        var btnAddDevice = this.FindName("btnAddDevice") as Button;
         if (btnAddDevice != null) btnAddDevice.Click += AddDeviceNode_Click;
 
-        var btnSaveProfile = this.FindName("btnSaveProfile") as System.Windows.Controls.Button;
+        var btnSaveProfile = this.FindName("btnSaveProfile") as Button;
         if (btnSaveProfile != null) btnSaveProfile.Click += SaveProfile_Click;
 
-        var btnLoadProfile = this.FindName("btnLoadProfile") as System.Windows.Controls.Button;
+        var btnLoadProfile = this.FindName("btnLoadProfile") as Button;
         if (btnLoadProfile != null) btnLoadProfile.Click += LoadProfile_Click;
 
-        var btnClearCanvas = this.FindName("btnClearCanvas") as System.Windows.Controls.Button;
+        var btnClearCanvas = this.FindName("btnClearCanvas") as Button;
         if (btnClearCanvas != null) btnClearCanvas.Click += ClearCanvas_Click;
+
+        var btnApplyRoutes = this.FindName("btnApplyRoutes") as Button;
+        if (btnApplyRoutes != null) btnApplyRoutes.Click += ApplyRoutes_Click;
+
+        var btnRefreshNodes = this.FindName("btnRefreshNodes") as Button;
+        if (btnRefreshNodes != null) btnRefreshNodes.Click += RefreshNodes_Click;
 
         // Setup canvas events
         MainCanvas.ConnectionCreated += OnConnectionCreated;
@@ -56,8 +80,142 @@ public partial class MainWindow : Window
         MainCanvas.MouseLeftButtonUp += OnCanvasMouseLeftButtonUp;
         MainCanvas.MouseLeftButtonDown += OnCanvasMouseLeftButtonDown;
         
-        // Load default profile on startup
-        LoadDefaultProfile();
+        // Subscribe to SonicFlow engine events
+        _sonicFlowEngine.RouteApplied += OnRouteApplied;
+        _sonicFlowEngine.RouteError += OnRouteError;
+
+        // Populate initial nodes
+        PopulateInitialNodes();
+        RefreshProfileList();
+    }
+
+    private void PopulateInitialNodes()
+    {
+        // Add audio devices as device nodes
+        var devices = _deviceService.GetOutputDevices().Where(d => d.IsConnected).ToList();
+        foreach (var device in devices)
+        {
+            var node = new RoutingNode(device.FriendlyName, NodeType.Device)
+            {
+                DeviceId = device.Id
+            };
+            Canvas.SetLeft(node, 600);
+            Canvas.SetTop(node, 50 + (_nodeCounter * 80));
+            node.ConnectionRequested += OnNodeConnectionRequested;
+            MainCanvas.Children.Add(node);
+            _nodeCounter++;
+        }
+
+        // Add running audio processes as app nodes
+        var processes = _processMonitor.GetRunningProcesses()
+            .Where(p => p.HasMainWindow && !string.IsNullOrEmpty(p.ProcessName))
+            .OrderBy(p => p.ProcessName)
+            .Take(10) // Limit to top 10
+            .ToList();
+
+        foreach (var process in processes)
+        {
+            var node = new RoutingNode(process.ProcessName, NodeType.App)
+            {
+                ProcessName = process.ProcessName
+            };
+            Canvas.SetLeft(node, 50);
+            Canvas.SetTop(node, 50 + (_nodeCounter * 80));
+            node.ConnectionRequested += OnNodeConnectionRequested;
+            MainCanvas.Children.Add(node);
+            _nodeCounter++;
+        }
+    }
+
+    private void RefreshNodes_Click(object sender, RoutedEventArgs e)
+    {
+        // Clear existing nodes but keep connections
+        var nodes = MainCanvas.Children.OfType<RoutingNode>().ToList();
+        foreach (var node in nodes)
+        {
+            node.ConnectionRequested -= OnNodeConnectionRequested;
+            MainCanvas.Children.Remove(node);
+        }
+        _nodeCounter = 0;
+        PopulateInitialNodes();
+        
+        _trayService.ShowNotification("SonicFlow", "Nodes refreshed with current devices and processes", NotificationType.Info);
+    }
+
+    private async void ApplyRoutes_Click(object sender, RoutedEventArgs e)
+    {
+        var routes = GetVisualRoutesFromCanvas();
+        if (!routes.Any())
+        {
+            _trayService.ShowNotification("SonicFlow", "No routes to apply", NotificationType.Warning);
+            return;
+        }
+
+        try
+        {
+            var devices = _deviceService.GetOutputDevices();
+            var processes = _processMonitor.GetRunningProcesses();
+
+            var appliedCount = await _sonicFlowEngine.ApplyRoutesAsync(routes, devices, processes);
+            
+            _trayService.ShowNotification("SonicFlow", 
+                $"Applied {appliedCount} of {routes.Count} routes", 
+                appliedCount > 0 ? NotificationType.Success : NotificationType.Error);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error applying routes");
+            _trayService.ShowNotification("SonicFlow", $"Error applying routes: {ex.Message}", NotificationType.Error);
+        }
+    }
+
+    private List<VisualRoute> GetVisualRoutesFromCanvas()
+    {
+        var routes = new List<VisualRoute>();
+        var nodes = MainCanvas.Children.OfType<RoutingNode>().ToDictionary(n => n.GetHashCode().ToString());
+
+        foreach (var conn in MainCanvas.Connections)
+        {
+            var sourceId = conn.Source.GetHashCode().ToString();
+            var targetId = conn.Target.GetHashCode().ToString();
+
+            if (nodes.TryGetValue(sourceId, out var source) && 
+                nodes.TryGetValue(targetId, out var target))
+            {
+                // Ensure source is app, target is device
+                RoutingNode appNode, deviceNode;
+                if (source.NodeType == NodeType.App && target.NodeType == NodeType.Device)
+                {
+                    appNode = source;
+                    deviceNode = target;
+                }
+                else if (source.NodeType == NodeType.Device && target.NodeType == NodeType.App)
+                {
+                    appNode = target;
+                    deviceNode = source;
+                }
+                else
+                {
+                    _logger.LogWarning("Invalid connection: {SourceType} -> {TargetType}", 
+                        source.NodeType, target.NodeType);
+                    continue;
+                }
+
+                routes.Add(new VisualRoute(
+                    SourceNodeId: sourceId,
+                    SourceTitle: appNode.NodeTitle,
+                    SourceType: appNode.NodeType,
+                    SourceProcessName: appNode.ProcessName,
+                    SourceDeviceId: appNode.DeviceId,
+                    TargetNodeId: targetId,
+                    TargetTitle: deviceNode.NodeTitle,
+                    TargetType: deviceNode.NodeType,
+                    TargetProcessName: deviceNode.ProcessName,
+                    TargetDeviceId: deviceNode.DeviceId));
+            }
+        }
+
+        return routes;
     }
 
     private void AddAppNode_Click(object sender, RoutedEventArgs e)
@@ -82,25 +240,25 @@ public partial class MainWindow : Window
 
     private void OnNodeConnectionRequested(object? sender, RoutingNode node)
     {
+        // Don't allow connecting if already has connections
         if (MainCanvas.Connections.Any(c => c.Source == node || c.Target == node))
         {
-            // Node already connected - could show context menu to disconnect
             return;
         }
 
-        if (MainCanvas.Connections.Count == 0 && _connectionSourceNode == null)
+        if (_connectionSourceNode == null)
         {
             // First click - start connection from this node
             MainCanvas.StartConnection(node);
             _connectionSourceNode = node;
         }
-        else if (_connectionSourceNode != null && _connectionSourceNode != node)
+        else if (_connectionSourceNode != node)
         {
             // Second click - complete connection
             MainCanvas.TryCompleteConnection(node);
             _connectionSourceNode = null;
         }
-        else if (_connectionSourceNode == node)
+        else
         {
             // Clicked same node - cancel
             MainCanvas.CancelConnection();
@@ -108,11 +266,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private RoutingNode? _connectionSourceNode = null;
-
     private void OnCanvasMouseMove(object sender, MouseEventArgs e)
     {
-        if (MainCanvas.Connections.Any(c => c.Source.IsConnectionSource) || _connectionSourceNode != null)
+        if (_connectionSourceNode != null)
         {
             var pos = e.GetPosition(MainCanvas);
             MainCanvas.UpdatePreviewLine(pos);
@@ -121,7 +277,6 @@ public partial class MainWindow : Window
 
     private void OnCanvasMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        // If we have a connection source but clicked on empty canvas, cancel
         if (_connectionSourceNode != null)
         {
             var hitTest = VisualTreeHelper.HitTest(MainCanvas, e.GetPosition(MainCanvas));
@@ -135,7 +290,6 @@ public partial class MainWindow : Window
 
     private void OnCanvasMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        // Focus the canvas to receive keyboard events
         MainCanvas.Focus();
     }
 
@@ -144,7 +298,6 @@ public partial class MainWindow : Window
         _logger.LogInformation("Connection created: {Source} -> {Target}", 
             connection.Source.NodeTitle, connection.Target.NodeTitle);
         
-        // Visual feedback
         connection.Source.IsConnectionSource = false;
         connection.Target.IsSelectedForConnection = false;
     }
@@ -155,12 +308,31 @@ public partial class MainWindow : Window
             connection.Source.NodeTitle, connection.Target.NodeTitle);
     }
 
+    private void OnRouteApplied(object? sender, RouteAppliedEventArgs e)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (e.Success)
+            {
+                _logger.LogInformation("Route applied: {Process} -> {Device}", e.ProcessName, e.DeviceName);
+            }
+        });
+    }
+
+    private void OnRouteError(object? sender, RouteErrorEventArgs e)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            _logger.LogError("Route error: {Source} -> {Target}: {Error}", 
+                e.SourceName, e.TargetName, e.ErrorMessage);
+        });
+    }
+
     private void SaveProfile_Click(object sender, RoutedEventArgs e)
     {
         var profile = CreateProfileFromCanvas();
         if (profile == null) return;
 
-        // Simple save dialog simulation - in real app would use SaveFileDialog
         var profileName = Microsoft.VisualBasic.Interaction.InputBox(
             "Enter profile name:", "Save SonicFlow Profile", "MyProfile");
         
@@ -190,7 +362,6 @@ public partial class MainWindow : Window
 
     private void LoadProfile_Click(object sender, RoutedEventArgs e)
     {
-        // In a real app, this would show a file picker. For now, load the first available.
         var files = Directory.GetFiles(_profileDirectory, "*.json");
         if (files.Length == 0)
         {
@@ -198,7 +369,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var filePath = files[0]; // Load first for now
+        var filePath = files[0];
         LoadProfileFromFile(filePath);
     }
 
@@ -334,7 +505,7 @@ public partial class MainWindow : Window
 
     private void RefreshProfileList()
     {
-        var profileList = this.FindName("ProfileList") as System.Windows.Controls.ListBox;
+        var profileList = this.FindName("ProfileList") as ListBox;
         if (profileList != null)
         {
             var files = Directory.GetFiles(_profileDirectory, "*.json");
@@ -472,10 +643,6 @@ public partial class MainWindow : Window
                 HideWindow();
             }
             e.Handled = true;
-        }
-        else if (e.Key == Key.Delete)
-        {
-            // Delete selected nodes/connections - could implement selection logic
         }
         base.OnKeyDown(e);
     }
