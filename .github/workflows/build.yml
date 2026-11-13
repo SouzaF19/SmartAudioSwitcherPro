@@ -1,0 +1,42 @@
+name: Build and test
+
+on:
+  push:
+    branches: [master, 'fix/**', 'feat/**']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore SmartAudioSwitcher.sln
+      - name: Build
+        run: dotnet build SmartAudioSwitcher.sln -c Release --no-restore --nologo
+      - name: Test without changing system audio
+        run: dotnet test SmartAudioSwitcher.sln -c Release --no-build --logger trx --results-directory TestResults
+      - name: Publish portable application
+        run: dotnet publish SmartAudioSwitcher.App/SmartAudioSwitcher.App.csproj -c Release -r win-x64 --self-contained true -o artifacts/SmartAudioSwitcher-Portable
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/**/*.trx
+          if-no-files-found: error
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartAudioSwitcher-Portable-win-x64
+          path: artifacts/SmartAudioSwitcher-Portable/
+          if-no-files-found: error

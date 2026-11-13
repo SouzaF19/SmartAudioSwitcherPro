@@ -4,298 +4,228 @@ using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
 
 namespace SmartAudioSwitcher.Platform.Services;
-
-/// <summary>
-/// Implementation of ISonicFlowEngine that translates visual routes to actual audio routing
-/// </summary>
-public class SonicFlowEngine : ISonicFlowEngine, IDisposable
+/// <summary>Routes are tracked per PID. Removing a route restores only a previously observed endpoint,
+/// not a persisted Windows preference (the Core contract has no get/clear preference API).</summary>
+public sealed class SonicFlowEngine : ISonicFlowEngine, IDisposable
 {
-    private readonly ILogger<SonicFlowEngine> _logger;
-    private readonly IAudioDeviceService _deviceService;
-    private readonly IAudioSessionService _sessionService;
-    private readonly IProcessMonitorService _processMonitor;
-    private readonly IProfileEngine _profileEngine;
-    
-    private readonly Dictionary<string, ActiveRoute> _activeRoutes = new();
-    private readonly SemaphoreSlim _routesLock = new(1, 1);
-    private bool _disposed = false;
-
+    readonly ILogger<SonicFlowEngine> _logger;
+    readonly IAudioDeviceService _devices;
+    readonly IAudioSessionService _sessions;
+    readonly IProcessMonitorService? _processMonitor;
+    readonly SemaphoreSlim _gate = new(1, 1);
+    readonly Dictionary<int, Tracked> _routes = new();
+    bool _disposed;
+    sealed record Tracked(ActiveRoute Route, string? PreviousDevice, DateTime ProcessStart);
     public event EventHandler<RouteAppliedEventArgs>? RouteApplied;
     public event EventHandler<RouteErrorEventArgs>? RouteError;
-
-    public SonicFlowEngine(
-        ILogger<SonicFlowEngine> logger,
-        IAudioDeviceService deviceService,
-        IAudioSessionService sessionService,
-        IProcessMonitorService processMonitor,
-        IProfileEngine profileEngine)
+    public SonicFlowEngine(ILogger<SonicFlowEngine> logger, IAudioDeviceService deviceService, IAudioSessionService sessionService, IProcessMonitorService processMonitor, IProfileEngine profileEngine)
     {
         _logger = logger;
-        _deviceService = deviceService;
-        _sessionService = sessionService;
+        _devices = deviceService;
+        _sessions = sessionService;
         _processMonitor = processMonitor;
-        _profileEngine = profileEngine;
     }
 
-    public async Task<int> ApplyRoutesAsync(
-        IReadOnlyList<VisualRoute> routes,
-        IReadOnlyList<AudioDevice> availableDevices,
-        IReadOnlyList<ProcessInfo> runningProcesses,
-        CancellationToken cancellationToken = default)
+    public async Task<int> ApplyRoutesAsync(IReadOnlyList<VisualRoute> routes, IReadOnlyList<AudioDevice> availableDevices, IReadOnlyList<ProcessInfo> runningProcesses, CancellationToken cancellationToken = default)
     {
-        if (_disposed) throw new ObjectDisposedException(nameof(SonicFlowEngine));
-
+        ObjectDisposedException.ThrowIf(_disposed, this);
         var validation = ValidateRoutes(routes, availableDevices, runningProcesses);
-        
         if (!validation.IsValid)
         {
             foreach (var error in validation.Errors)
-            {
-                _logger.LogError("Route validation failed: {Error}", error);
-                RouteError?.Invoke(this, new RouteErrorEventArgs
-                {
-                    SourceName = "",
-                    TargetName = "",
-                    ErrorMessage = error
-                });
-            }
+                Error("", "", error);
             return 0;
         }
 
-        var appliedCount = 0;
-
+        int applied = 0;
         foreach (var resolved in validation.ResolvedRoutes.Where(r => r.IsResolved))
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            bool success = false;
+            await _gate.WaitAsync(cancellationToken);
             try
             {
-                var success = await ApplySingleRouteAsync(resolved, cancellationToken);
-                
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                var process = resolved.MatchedProcess!;
+                var target = resolved.MatchedDevice!;
+                var existing = _routes.GetValueOrDefault(process.ProcessId);
+                var observedEndpoints = _sessions.GetActiveSessions().Where(s => s.ProcessId == process.ProcessId).Select(s => s.CurrentDeviceId).Distinct().ToArray();
+                var previous = existing != null && existing.ProcessStart == process.StartTime ? existing.PreviousDevice : observedEndpoints.Length == 1 ? observedEndpoints[0] : null;
+                success = _sessions.SetSessionDevice(process.ProcessId, target.Id);
                 if (success)
                 {
-                    appliedCount++;
-                    RouteApplied?.Invoke(this, new RouteAppliedEventArgs
-                    {
-                        ProcessName = resolved.VisualRoute.SourceProcessName ?? resolved.VisualRoute.SourceTitle,
-                        DeviceName = resolved.MatchedDevice?.FriendlyName ?? resolved.VisualRoute.TargetTitle,
-                        Success = true
-                    });
+                    _routes[process.ProcessId] = new(new(process.ProcessId, process.ProcessName, target.Id, target.FriendlyName, DateTime.UtcNow, true), previous, process.StartTime);
+                    applied++;
                 }
-                else
-                {
-                    RouteError?.Invoke(this, new RouteErrorEventArgs
-                    {
-                        SourceName = resolved.VisualRoute.SourceTitle,
-                        TargetName = resolved.VisualRoute.TargetTitle,
-                        ErrorMessage = "Failed to apply route - SetSessionDevice returned false"
-                    });
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error applying route {Source} -> {Target}", 
-                    resolved.VisualRoute.SourceTitle, resolved.VisualRoute.TargetTitle);
-                
-                RouteError?.Invoke(this, new RouteErrorEventArgs
-                {
-                    SourceName = resolved.VisualRoute.SourceTitle,
-                    TargetName = resolved.VisualRoute.TargetTitle,
-                    ErrorMessage = ex.Message,
-                    Exception = ex
-                });
-            }
-        }
-
-        _logger.LogInformation("Applied {Count}/{Total} routes from SonicFlow", appliedCount, routes.Count);
-        return appliedCount;
-    }
-
-    private async Task<bool> ApplySingleRouteAsync(ResolvedRoute resolved, CancellationToken cancellationToken)
-    {
-        if (resolved.MatchedProcess == null || resolved.MatchedDevice == null)
-            return false;
-
-        // Use the session service to route the process to the device
-        var success = _sessionService.SetSessionDevice(
-            resolved.MatchedProcess.ProcessId, 
-            resolved.MatchedDevice.Id);
-
-        if (success)
-        {
-            await _routesLock.WaitAsync(cancellationToken);
-            try
-            {
-                var key = $"{resolved.MatchedProcess.ProcessId}:{resolved.MatchedDevice.Id}";
-                _activeRoutes[key] = new ActiveRoute(
-                    resolved.MatchedProcess.ProcessId,
-                    resolved.MatchedProcess.ProcessName,
-                    resolved.MatchedDevice.Id,
-                    resolved.MatchedDevice.FriendlyName,
-                    DateTime.Now,
-                    true);
+                _logger.LogError(ex, "Route application failed");
+                Error(resolved.VisualRoute.SourceTitle, resolved.VisualRoute.TargetTitle, ex.Message);
             }
             finally
             {
-                _routesLock.Release();
+                _gate.Release();
             }
+
+            if (success)
+                RouteApplied?.Invoke(this, new() { ProcessName = resolved.MatchedProcess!.ProcessName, DeviceName = resolved.MatchedDevice!.FriendlyName, Success = true });
+            else
+                Error(resolved.VisualRoute.SourceTitle, resolved.VisualRoute.TargetTitle, "Session endpoint assignment was rejected or could not be verified");
         }
 
-        return success;
+        return applied;
     }
 
     public async Task<IReadOnlyList<ActiveRoute>> GetActiveRoutesAsync(CancellationToken cancellationToken = default)
     {
-        await _routesLock.WaitAsync(cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
-            // Refresh from actual audio sessions
-            var sessions = _sessionService.GetActiveSessions();
-            var devices = _deviceService.GetOutputDevices();
-            var deviceLookup = devices.ToDictionary(d => d.Id, d => d.FriendlyName);
-
-            var activeRoutes = new List<ActiveRoute>();
-            foreach (var session in sessions.Where(s => !s.IsSystemSounds))
-            {
-                if (deviceLookup.TryGetValue(session.CurrentDeviceId, out var deviceName))
-                {
-                    activeRoutes.Add(new ActiveRoute(
-                        session.ProcessId,
-                        session.ProcessName,
-                        session.CurrentDeviceId,
-                        deviceName,
-                        DateTime.Now, // Would need to track actual apply time
-                        true));
-                }
-            }
-
-            return activeRoutes;
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var names = _devices.GetOutputDevices().GroupBy(d => d.Id).ToDictionary(g => g.Key, g => g.First().FriendlyName);
+            return _sessions.GetActiveSessions().Where(s => !s.IsSystemSounds && names.ContainsKey(s.CurrentDeviceId)).Select(s => new ActiveRoute(s.ProcessId, s.ProcessName, s.CurrentDeviceId, names[s.CurrentDeviceId], _routes.GetValueOrDefault(s.ProcessId)?.Route.AppliedAt ?? DateTime.UtcNow, true)).ToArray();
         }
         finally
         {
-            _routesLock.Release();
+            _gate.Release();
         }
     }
 
     public async Task<bool> RemoveRouteAsync(string sourceProcessName, string targetDeviceId, CancellationToken cancellationToken = default)
     {
-        // Find and remove the route - would need to restore to default or previous device
-        // For now, just remove from tracking
-        await _routesLock.WaitAsync(cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
-            var key = _activeRoutes.Keys.FirstOrDefault(k => 
-                k.StartsWith(sourceProcessName) && k.EndsWith(targetDeviceId));
-            
-            if (key != null)
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            // The public contract names a process, so apply removal to every tracked instance of that exact name.
+            var matches = _routes.Where(p => Normalize(p.Value.Route.ProcessName).Equals(Normalize(sourceProcessName), StringComparison.OrdinalIgnoreCase) && p.Value.Route.TargetDeviceId == targetDeviceId).ToArray();
+            if (matches.Length == 0)
+                return false;
+            bool all = true;
+            foreach (var pair in matches)
             {
-                _activeRoutes.Remove(key);
-                return true;
+                cancellationToken.ThrowIfCancellationRequested();
+                var tracked = pair.Value;
+                var current = _sessions.GetSessionByProcessId(pair.Key);
+                if (_processMonitor != null)
+                {
+                    var process = _processMonitor.GetProcessById(pair.Key);
+                    if (process == null || process.StartTime != tracked.ProcessStart || !Normalize(process.ProcessName).Equals(Normalize(tracked.Route.ProcessName), StringComparison.OrdinalIgnoreCase))
+                    {
+                        all = false;
+                        continue;
+                    }
+                }
+
+                // Do not overwrite another actor's change or claim restoration when no original endpoint is known.
+                if (string.IsNullOrWhiteSpace(tracked.PreviousDevice) || current?.CurrentDeviceId != targetDeviceId)
+                {
+                    all = false;
+                    continue;
+                }
+
+                try
+                {
+                    if (!_sessions.SetSessionDevice(pair.Key, tracked.PreviousDevice) || _sessions.GetSessionByProcessId(pair.Key)?.CurrentDeviceId != tracked.PreviousDevice)
+                    {
+                        all = false;
+                        continue;
+                    }
+
+                    _routes.Remove(pair.Key);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Could not restore PID {Pid}", pair.Key);
+                    all = false;
+                }
             }
-            return false;
+
+            return all;
         }
         finally
         {
-            _routesLock.Release();
+            _gate.Release();
         }
     }
 
-    public RouteValidationResult ValidateRoutes(
-        IReadOnlyList<VisualRoute> routes,
-        IReadOnlyList<AudioDevice> availableDevices,
-        IReadOnlyList<ProcessInfo> runningProcesses)
+    public RouteValidationResult ValidateRoutes(IReadOnlyList<VisualRoute> routes, IReadOnlyList<AudioDevice> availableDevices, IReadOnlyList<ProcessInfo> runningProcesses)
     {
-        var result = new RouteValidationResult { IsValid = true };
-
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var result = new RouteValidationResult
+        {
+            IsValid = true
+        };
         foreach (var route in routes)
         {
-            // Resolve source (app/process)
-            ProcessInfo? matchedProcess = null;
-            if (!string.IsNullOrEmpty(route.SourceProcessName))
-            {
-                matchedProcess = runningProcesses.FirstOrDefault(p => 
-                    MatchesProcessPattern(p.ProcessName, route.SourceProcessName) ||
-                    (p.MainModulePath != null && MatchesProcessPattern(p.MainModulePath, route.SourceProcessName)));
-            }
-            else if (route.SourceType == NodeType.App)
-            {
-                // Try to match by title if no process name stored
-                matchedProcess = runningProcesses.FirstOrDefault(p => 
-                    MatchesProcessPattern(p.ProcessName, route.SourceTitle));
-            }
-
-            // Resolve target (device)
-            AudioDevice? matchedDevice = null;
-            if (!string.IsNullOrEmpty(route.TargetDeviceId))
-            {
-                matchedDevice = availableDevices.FirstOrDefault(d => d.Id == route.TargetDeviceId);
-            }
-            else if (route.TargetType == NodeType.Device)
-            {
-                // Try to match by title/name
-                matchedDevice = availableDevices.FirstOrDefault(d => 
-                    d.FriendlyName.Contains(route.TargetTitle, StringComparison.OrdinalIgnoreCase) ||
-                    MatchesDevicePattern(d.FriendlyName, route.TargetTitle));
-            }
-
-            var isResolved = matchedProcess != null && matchedDevice != null;
-
-            if (!isResolved)
+            if (route.SourceType != NodeType.App || route.TargetType != NodeType.Device)
             {
                 result.IsValid = false;
-                if (matchedProcess == null)
-                    result.Errors.Add($"No running process matches source '{route.SourceTitle}' (pattern: {route.SourceProcessName ?? "none"})");
-                if (matchedDevice == null)
-                    result.Errors.Add($"No available device matches target '{route.TargetTitle}' (ID: {route.TargetDeviceId ?? "none"})");
-            }
-            else if (!matchedDevice.IsConnected)
-            {
-                result.Warnings.Add($"Target device '{matchedDevice.FriendlyName}' is currently disconnected");
+                result.Errors.Add("Only app-to-render-device routes are supported");
+                continue;
             }
 
-            result.ResolvedRoutes.Add(new ResolvedRoute(route, matchedProcess, matchedDevice, isResolved));
+            var pattern = string.IsNullOrWhiteSpace(route.SourceProcessName) ? route.SourceTitle : route.SourceProcessName;
+            var processes = runningProcesses.Where(p => Match(p.ProcessName, pattern) || (p.MainModulePath != null && Match(p.MainModulePath, pattern))).DistinctBy(p => p.ProcessId).ToArray();
+            var targets = availableDevices.Where(d => !string.IsNullOrEmpty(route.TargetDeviceId) ? d.Id == route.TargetDeviceId : d.FriendlyName.Equals(route.TargetTitle, StringComparison.OrdinalIgnoreCase)).ToArray();
+            var target = targets.Length == 1 ? targets[0] : null;
+            if (processes.Length == 0 || target == null || !target.IsConnected)
+            {
+                result.IsValid = false;
+                result.Errors.Add($"Unresolved, ambiguous, or disconnected route: {route.SourceTitle} -> {route.TargetTitle}");
+                result.ResolvedRoutes.Add(new(route, null, target, false));
+                continue;
+            }
+
+            foreach (var process in processes)
+                result.ResolvedRoutes.Add(new(route, process, target, true));
         }
 
         return result;
     }
 
-    private bool MatchesProcessPattern(string processName, string pattern)
+    static string Normalize(string name) => name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name;
+    static bool Match(string name, string pattern)
     {
-        if (string.IsNullOrEmpty(pattern)) return false;
-        if (string.IsNullOrEmpty(processName)) return false;
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(pattern))
+            return false;
+        // A path pattern stays a path; bare exe patterns match Process.ProcessName without suffix.
+        if (!pattern.Contains('\\') && !pattern.Contains('/'))
+        {
+            name = name.Replace('\\', '/').Split('/').Last();
+            name = Normalize(name);
+            pattern = Normalize(pattern);
+        }
 
-        // Support wildcards like *.exe, Discord*, etc.
-        if (pattern == "*") return true;
-
-        var regexPattern = "^" + Regex.Escape(pattern)
-            .Replace("\\*", ".*")
-            .Replace("\\?", ".") + "$";
-
+        var regex = "^" + Regex.Escape(pattern).Replace("\\*", ".*").Replace("\\?", ".") + "$";
         try
         {
-            return Regex.IsMatch(processName, regexPattern, RegexOptions.IgnoreCase);
+            return Regex.IsMatch(name, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
         }
-        catch
+        catch (RegexMatchTimeoutException)
         {
-            // Fallback to simple contains
-            return processName.Contains(pattern, StringComparison.OrdinalIgnoreCase);
+            return false;
         }
     }
 
-    private bool MatchesDevicePattern(string deviceName, string pattern)
-    {
-        if (string.IsNullOrEmpty(pattern)) return false;
-        if (string.IsNullOrEmpty(deviceName)) return false;
-
-        return deviceName.Contains(pattern, StringComparison.OrdinalIgnoreCase);
-    }
-
+    void Error(string source, string target, string message) => RouteError?.Invoke(this, new() { SourceName = source, TargetName = target, ErrorMessage = message });
+    // Keep the semaphore alive: concurrent waiters must receive ObjectDisposedException, not race Release/Dispose.
     public void Dispose()
     {
-        if (!_disposed)
+        _gate.Wait();
+        try
         {
             _disposed = true;
-            _routesLock.Dispose();
+            _routes.Clear();
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 }

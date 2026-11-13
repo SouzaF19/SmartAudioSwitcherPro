@@ -1,99 +1,97 @@
+using SmartAudioSwitcher.Core.Configuration;
 using SmartAudioSwitcher.Core.Interfaces;
 using SmartAudioSwitcher.Core.Models;
 using Microsoft.Extensions.Logging;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
-
 namespace SmartAudioSwitcher.Core.Services;
-
-public class ConfigurationService : IConfigurationService
+public sealed class ConfigurationService:IConfigurationService,IDisposable
 {
-    private readonly ILogger<ConfigurationService> _logger;
-    private readonly string _configPath;
-    private readonly IDeserializer _deserializer;
-    private readonly ISerializer _serializer;
-    private AppSettings? _cachedSettings;
-    private FileSystemWatcher? _watcher;
-
-    public event EventHandler<AppSettings>? SettingsChanged;
-
-    public ConfigurationService(ILogger<ConfigurationService> logger)
-    {
-        _logger = logger;
-        _configPath = GetDefaultConfigPath();
-        
-        _deserializer = new DeserializerBuilder()
-            .WithNamingConvention(CamelCaseNamingConvention.Instance)
-            .IgnoreUnmatchedProperties()
-            .Build();
-
-        _serializer = new SerializerBuilder()
-            .WithNamingConvention(CamelCaseNamingConvention.Instance)
-            .Build();
-    }
-
-    public AppSettings LoadSettings()
-    {
-        try
-        {
-            if (!File.Exists(_configPath))
-            {
-                _logger.LogInformation("Config file not found at {Path}, creating defaults", _configPath);
-                var defaults = GetDefaults();
-                SaveSettings(defaults);
-                return defaults;
-            }
-
-            var yaml = File.ReadAllText(_configPath);
-            var settings = _deserializer.Deserialize<AppSettings>(yaml);
-            
-            settings = MergeWithDefaults(settings);
-            
-            _cachedSettings = settings;
-            _logger.LogInformation("Settings loaded from {Path}", _configPath);
-            return settings;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to load settings, using defaults");
-            return GetDefaults();
-        }
-    }
-
-    public void SaveSettings(AppSettings settings)
-    {
-        try
-        {
-            var directory = Path.GetDirectoryName(_configPath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            var yaml = _serializer.Serialize(settings);
-            File.WriteAllText(_configPath, yaml);
-            
-            _cachedSettings = settings;
-            _logger.LogInformation("Settings saved to {Path}", _configPath);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to save settings");
-            throw;
-        }
-    }
-
-    public string GetConfigPath() => _configPath;
-
-    public AppSettings GetDefaults() => new AppSettings
-    {
-        General = new GeneralSettings(),
-        Devices = new DeviceMatchingSettings(),
-        Profiles = GetDefaultProfiles(),
-        Hotkeys = new HotkeySettings(),
-        Api = new ApiSettings()
-    };
-
+ readonly ILogger<ConfigurationService> _logger;
+ readonly string _configPath;
+ readonly object _gate=new();
+ readonly ISerializer _serializer=new SerializerBuilder().WithNamingConvention(CamelCaseNamingConvention.Instance).ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull).Build();
+ AppSettings? _cachedSettings;string? _lastText;FileSystemWatcher? _watcher;Timer? _debounce;bool _disposed;
+ public event EventHandler<AppSettings>? SettingsChanged;
+ public ConfigurationService(ILogger<ConfigurationService> logger,string? configPath=null)
+ {
+  _logger=logger;
+  _configPath=Path.GetFullPath(configPath??GetDefaultConfigPath());
+ }
+ public string GetConfigPath()=>_configPath;
+ public AppSettings GetDefaults()=>CreateDefaults();
+ public string GetDefaultConfigPath()=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"SmartAudioSwitcher","config.yaml");
+ public AppSettings LoadSettings()
+ {
+  lock(_gate)
+  {
+   ObjectDisposedException.ThrowIf(_disposed,this);
+   if(!File.Exists(_configPath))
+   {
+    _cachedSettings??=CreateDefaults();
+    SaveSettings(_cachedSettings);return _cachedSettings;
+   }
+   try
+   {
+    var text=File.ReadAllText(_configPath);
+    var settings=ConfigurationYaml.Deserialize(text,out var hasProfiles);
+    if(!hasProfiles)settings.Profiles=GetDefaultProfiles();
+    _cachedSettings=settings;_lastText=text;return settings;
+   }
+   catch(Exception ex) when(ex is not OutOfMemoryException)
+   {
+    _logger.LogError(ex,"Invalid configuration at {Path}; retaining the last valid settings without changing the file",_configPath);
+    return _cachedSettings??=CreateDefaults();
+   }
+  }
+ }
+ AppSettings CreateDefaults()=>new(){Profiles=GetDefaultProfiles()};
+ public void SaveSettings(AppSettings settings)
+ {
+  lock(_gate)
+  {
+   ObjectDisposedException.ThrowIf(_disposed,this);ConfigurationYaml.Validate(settings);
+   var text=_serializer.Serialize(settings);var directory=Path.GetDirectoryName(_configPath)!;Directory.CreateDirectory(directory);
+   var temporary=Path.Combine(directory,"."+Path.GetFileName(_configPath)+"."+Guid.NewGuid().ToString("N")+".tmp");
+   try
+   {
+    using(var file=new FileStream(temporary,FileMode.CreateNew,FileAccess.Write,FileShare.None))
+    {using(var writer=new StreamWriter(file,System.Text.Encoding.UTF8,1024,true)){writer.Write(text);writer.Flush();}file.Flush(true);}
+    File.Move(temporary,_configPath,true);_cachedSettings=settings;_lastText=text;
+   }
+   finally{if(File.Exists(temporary))File.Delete(temporary);}
+  }
+ }
+ public void StartFileWatcher()
+ {
+  lock(_gate)
+  {
+   ObjectDisposedException.ThrowIf(_disposed,this);if(_watcher!=null)return;
+   Directory.CreateDirectory(Path.GetDirectoryName(_configPath)!);
+   _debounce=new Timer(_=>Reload(),null,Timeout.Infinite,Timeout.Infinite);
+   _watcher=new FileSystemWatcher(Path.GetDirectoryName(_configPath)!,Path.GetFileName(_configPath)){NotifyFilter=NotifyFilters.LastWrite|NotifyFilters.FileName|NotifyFilters.Size};
+   _watcher.Changed+=Schedule;_watcher.Created+=Schedule;_watcher.Renamed+=Schedule;_watcher.EnableRaisingEvents=true;
+  }
+ }
+ void Schedule(object sender,FileSystemEventArgs args)
+ {lock(_gate){if(!_disposed&&_watcher!=null)_debounce?.Change(150,Timeout.Infinite);}}
+ void Reload()
+ {
+  AppSettings? updated=null;
+  lock(_gate)
+  {
+   if(_disposed||_watcher==null||!File.Exists(_configPath))return;
+   var previous=_lastText;var settings=LoadSettings();if(previous!=_lastText)updated=settings;
+  }
+  if(updated!=null)
+   foreach(EventHandler<AppSettings> handler in SettingsChanged?.GetInvocationList()??Array.Empty<Delegate>())
+    try{handler(this,updated);}catch(Exception ex){_logger.LogError(ex,"Configuration subscriber failed");}
+ }
+ public void StopFileWatcher()
+ {
+  lock(_gate){_watcher?.Dispose();_watcher=null;_debounce?.Dispose();_debounce=null;}
+ }
+ public void Dispose(){lock(_gate){if(_disposed)return;StopFileWatcher();_disposed=true;}}
     private List<Profile> GetDefaultProfiles()
     {
         return new List<Profile>
@@ -189,82 +187,5 @@ public class ConfigurationService : IConfigurationService
                 Enabled = true
             }
         };
-    }
-
-    private AppSettings MergeWithDefaults(AppSettings loaded)
-    {
-        var defaults = GetDefaults();
-        
-        loaded.General ??= defaults.General;
-        loaded.Devices ??= defaults.Devices;
-        loaded.Profiles ??= defaults.Profiles;
-        loaded.Hotkeys ??= defaults.Hotkeys;
-        loaded.Api ??= defaults.Api;
-
-        MergePatterns(loaded.Devices.HeadsetPatterns, defaults.Devices.HeadsetPatterns);
-        MergePatterns(loaded.Devices.SpeakersPatterns, defaults.Devices.SpeakersPatterns);
-        MergePatterns(loaded.Devices.HdmiPatterns, defaults.Devices.HdmiPatterns);
-        MergePatterns(loaded.Devices.BluetoothPatterns, defaults.Devices.BluetoothPatterns);
-        MergePatterns(loaded.Devices.VirtualPatterns, defaults.Devices.VirtualPatterns);
-
-        return loaded;
-    }
-
-    private void MergePatterns(List<string> userPatterns, List<string> defaultPatterns)
-    {
-        foreach (var pattern in defaultPatterns)
-        {
-            if (!userPatterns.Any(p => p.Equals(pattern, StringComparison.OrdinalIgnoreCase)))
-            {
-                userPatterns.Add(pattern);
-            }
-        }
-    }
-
-    private string GetDefaultConfigPath()
-    {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var configDir = Path.Combine(appData, "SmartAudioSwitcher");
-        return Path.Combine(configDir, "config.yaml");
-    }
-
-    public void StartFileWatcher()
-    {
-        if (_watcher != null) return;
-
-        var directory = Path.GetDirectoryName(_configPath);
-        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory)) return;
-
-        _watcher = new FileSystemWatcher(directory, Path.GetFileName(_configPath))
-        {
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
-            EnableRaisingEvents = true
-        };
-
-        _watcher.Changed += OnConfigChanged;
-        _logger.LogDebug("Started config file watcher on {Path}", _configPath);
-    }
-
-    public void StopFileWatcher()
-    {
-        _watcher?.Dispose();
-        _watcher = null;
-    }
-
-    private void OnConfigChanged(object sender, FileSystemEventArgs e)
-    {
-        Task.Delay(500).ContinueWith(_ =>
-        {
-            try
-            {
-                var newSettings = LoadSettings();
-                SettingsChanged?.Invoke(this, newSettings);
-                _logger.LogInformation("Settings reloaded due to file change");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to reload settings after file change");
-            }
-        });
     }
 }

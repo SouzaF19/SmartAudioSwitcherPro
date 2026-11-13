@@ -14,10 +14,10 @@ namespace SmartAudioSwitcher.App;
 public class Program
 {
     [STAThread]
-    public static async Task Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
         var builder = Host.CreateApplicationBuilder(args);
-        
+
         // Configure logging
         builder.Logging.ClearProviders();
         builder.Logging.AddConsole();
@@ -27,7 +27,7 @@ public class Program
         // Register Core services
         builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
         builder.Services.AddSingleton<IProfileEngine, ProfileEngine>();
-        
+
         // Register Platform services
         builder.Services.AddSingleton<IAudioDeviceService, AudioDeviceService>();
         builder.Services.AddSingleton<IAudioSessionService, AudioSessionService>();
@@ -35,108 +35,49 @@ public class Program
         builder.Services.AddSingleton<IHotkeyService, HotkeyService>();
         builder.Services.AddSingleton<ISystemTrayService, SystemTrayService>();
         builder.Services.AddSingleton<ILocalizationService, LocalizationService>();
-        
+
         // Register SonicFlow Engine
         builder.Services.AddSingleton<ISonicFlowEngine, SonicFlowEngine>();
-        
-        // Register UI services
-        builder.Services.AddSingleton<MainWindowViewModel>();
+
+        // Register UI services - window and VM resolved via DI
         builder.Services.AddSingleton<MainWindow>();
-        
+        builder.Services.AddSingleton<MainWindowViewModel>();
+
         // Register Application Host
         builder.Services.AddSingleton<IApplicationHost, ApplicationHost>();
 
         var host = builder.Build();
 
-        // Initialize services
+        // Resolve services and initialize
         var configService = host.Services.GetRequiredService<IConfigurationService>();
         var settings = configService.LoadSettings();
         configService.StartFileWatcher();
 
         var localizationService = host.Services.GetRequiredService<ILocalizationService>();
         localizationService.SetLanguage(settings.General.Language);
-        
+
         var profileEngine = host.Services.GetRequiredService<IProfileEngine>();
         profileEngine.ReloadConfiguration(settings);
 
-        // Register hotkeys
-        var hotkeyService = host.Services.GetRequiredService<IHotkeyService>();
-        RegisterHotkeys(hotkeyService, host.Services);
+        // Build the main window via DI - NO Task.Run for Show
+        var mainWindow = host.Services.GetRequiredService<MainWindow>();
+        var mainWindowVM = host.Services.GetRequiredService<MainWindowViewModel>();
+        mainWindow.DataContext = mainWindowVM;
 
-        // Start monitoring services
-        var deviceService = host.Services.GetRequiredService<IAudioDeviceService>();
-        var sessionService = host.Services.GetRequiredService<IAudioSessionService>();
-        var processMonitor = host.Services.GetRequiredService<IProcessMonitorService>();
-        
-        deviceService.StartMonitoring();
-        sessionService.StartMonitoring();
-        processMonitor.StartMonitoring();
-
-        // Subscribe to events
+        // Subscribe to events via DI
         SubscribeToEvents(host.Services, profileEngine, configService);
 
-        // Run application
+        // Run application via App.OnStartup as owner - synchronous with host lifetime
+        // The ApplicationHost manages the UI thread dispatcher and shutdown cleanup
         var appHost = host.Services.GetRequiredService<IApplicationHost>();
         await appHost.RunAsync();
 
         // Cleanup
         configService.StopFileWatcher();
+        var hotkeyService = host.Services.GetRequiredService<IHotkeyService>();
         hotkeyService.UnregisterAll();
-    }
 
-    private static void RegisterHotkeys(IHotkeyService hotkeyService, IServiceProvider services)
-    {
-        var configService = services.GetRequiredService<IConfigurationService>();
-        var settings = configService.LoadSettings();
-
-        hotkeyService.RegisterHotkey("CycleOutput", settings.Hotkeys.CycleOutput, () =>
-        {
-            // Cycle through output devices
-            var deviceService = services.GetRequiredService<IAudioDeviceService>();
-            var devices = deviceService.GetOutputDevices().Where(d => d.IsConnected).ToList();
-            var current = deviceService.GetDefaultDevice();
-            var currentIndex = devices.FindIndex(d => d.Id == current?.Id);
-            var nextIndex = (currentIndex + 1) % devices.Count;
-            deviceService.SetDefaultDevice(devices[nextIndex].Id);
-        });
-
-        hotkeyService.RegisterHotkey("ToggleMute", settings.Hotkeys.ToggleMute, () =>
-        {
-            // Toggle system mute
-            var deviceService = services.GetRequiredService<IAudioDeviceService>();
-            var defaultDevice = deviceService.GetDefaultDevice();
-            if (defaultDevice != null)
-            {
-                // Would need volume control implementation
-            }
-        });
-
-        hotkeyService.RegisterHotkey("ForceHeadset", settings.Hotkeys.ForceHeadset, () =>
-        {
-            // Force switch to headset
-            var deviceService = services.GetRequiredService<IAudioDeviceService>();
-            var headset = deviceService.GetOutputDevices()
-                .FirstOrDefault(d => d.Type == DeviceType.Headset && d.IsConnected);
-            if (headset != null)
-            {
-                deviceService.SetDefaultDevice(headset.Id);
-            }
-        });
-
-        hotkeyService.RegisterHotkey("OpenDashboard", settings.Hotkeys.OpenDashboard, () =>
-        {
-            var mainWindow = services.GetRequiredService<MainWindow>();
-            if (!mainWindow.IsVisible)
-            {
-                mainWindow.Show();
-                mainWindow.WindowState = System.Windows.WindowState.Normal;
-                mainWindow.Activate();
-            }
-            else
-            {
-                mainWindow.Hide();
-            }
-        });
+        return 0;
     }
 
     private static void SubscribeToEvents(IServiceProvider services, IProfileEngine profileEngine, IConfigurationService configService)
@@ -144,11 +85,11 @@ public class Program
         var deviceService = services.GetRequiredService<IAudioDeviceService>();
         var processMonitor = services.GetRequiredService<IProcessMonitorService>();
         var sessionService = services.GetRequiredService<IAudioSessionService>();
-        var mainWindowVM = services.GetRequiredService<MainWindowViewModel>();
 
         // Device changes
         deviceService.DeviceChanged += (sender, e) =>
         {
+            var mainWindowVM = services.GetRequiredService<MainWindowViewModel>();
             mainWindowVM.OnDeviceChanged(e);
             EvaluateAndApplyRouting(services, profileEngine, "Device change");
         };
@@ -156,6 +97,7 @@ public class Program
         // Process changes
         processMonitor.ProcessEvent += (sender, e) =>
         {
+            var mainWindowVM = services.GetRequiredService<MainWindowViewModel>();
             mainWindowVM.OnProcessEvent(e);
             EvaluateAndApplyRouting(services, profileEngine, $"Process {e.Type}: {e.ProcessName}");
         };
@@ -163,6 +105,7 @@ public class Program
         // Session changes
         sessionService.SessionChanged += (sender, e) =>
         {
+            var mainWindowVM = services.GetRequiredService<MainWindowViewModel>();
             mainWindowVM.OnSessionEvent(e);
         };
 
@@ -170,6 +113,7 @@ public class Program
         configService.SettingsChanged += (sender, settings) =>
         {
             profileEngine.ReloadConfiguration(settings);
+            var mainWindowVM = services.GetRequiredService<MainWindowViewModel>();
             mainWindowVM.OnSettingsChanged(settings);
             EvaluateAndApplyRouting(services, profileEngine, "Settings changed");
         };
@@ -189,13 +133,13 @@ public class Program
             var profile = profileEngine.EvaluateProfile(devices, processes);
             if (profile != null)
             {
-                var decision = profileEngine.DecideRouting(profile, deviceService.GetDefaultDevice(), 
+                var decision = profileEngine.DecideRouting(profile, deviceService.GetDefaultDevice(),
                     processMonitor.GetForegroundProcess(), devices);
-                
+
                 mainWindowVM.OnRoutingDecision(decision, reason);
 
                 // Apply routing for default device
-                if (!decision.IsFallback || true) // Always apply for now
+                if (!decision.IsFallback || true)
                 {
                     deviceService.SetDefaultDevice(decision.DeviceId);
                 }

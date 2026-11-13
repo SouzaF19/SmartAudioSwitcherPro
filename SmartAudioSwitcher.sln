@@ -15,6 +15,18 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartAudioSwitcher.Api", "S
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartAudioSwitcher.App", "SmartAudioSwitcher.App\SmartAudioSwitcher.App.csproj", "{CB0F2426-1F20-426E-9FB3-5F9571D2A235}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{5FABA6AC-7DC0-47D0-A949-37C78AE003BE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartAudioSwitcher.CommandTests", "tests\SmartAudioSwitcher.CommandTests\SmartAudioSwitcher.CommandTests.csproj", "{106AF38C-6F73-4FA9-B493-7A0BB95A2785}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartAudioSwitcher.ConfigurationTests", "tests\SmartAudioSwitcher.ConfigurationTests\SmartAudioSwitcher.ConfigurationTests.csproj", "{702E0C20-4191-4F9B-9E5F-25CF99DF4648}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartAudioSwitcher.PlatformTests", "tests\SmartAudioSwitcher.PlatformTests\SmartAudioSwitcher.PlatformTests.csproj", "{97C84684-532D-425D-8D03-7D027ED29DB9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartAudioSwitcher.ProfileTests", "tests\SmartAudioSwitcher.ProfileTests\SmartAudioSwitcher.ProfileTests.csproj", "{19CD8051-E2E5-485B-861F-25CCE642E99B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartAudioSwitcher.UITests", "tests\SmartAudioSwitcher.UITests\SmartAudioSwitcher.UITests.csproj", "{A5DBA9C5-CFF0-4D78-9F9D-1FB2324A49CB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -48,5 +60,32 @@ Global
 		{CB0F2426-1F20-426E-9FB3-5F9571D2A235}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CB0F2426-1F20-426E-9FB3-5F9571D2A235}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CB0F2426-1F20-426E-9FB3-5F9571D2A235}.Release|Any CPU.Build.0 = Release|Any CPU
+		{106AF38C-6F73-4FA9-B493-7A0BB95A2785}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{106AF38C-6F73-4FA9-B493-7A0BB95A2785}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{106AF38C-6F73-4FA9-B493-7A0BB95A2785}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{106AF38C-6F73-4FA9-B493-7A0BB95A2785}.Release|Any CPU.Build.0 = Release|Any CPU
+		{702E0C20-4191-4F9B-9E5F-25CF99DF4648}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{702E0C20-4191-4F9B-9E5F-25CF99DF4648}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{702E0C20-4191-4F9B-9E5F-25CF99DF4648}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{702E0C20-4191-4F9B-9E5F-25CF99DF4648}.Release|Any CPU.Build.0 = Release|Any CPU
+		{97C84684-532D-425D-8D03-7D027ED29DB9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{97C84684-532D-425D-8D03-7D027ED29DB9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{97C84684-532D-425D-8D03-7D027ED29DB9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{97C84684-532D-425D-8D03-7D027ED29DB9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{19CD8051-E2E5-485B-861F-25CCE642E99B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{19CD8051-E2E5-485B-861F-25CCE642E99B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{19CD8051-E2E5-485B-861F-25CCE642E99B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{19CD8051-E2E5-485B-861F-25CCE642E99B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A5DBA9C5-CFF0-4D78-9F9D-1FB2324A49CB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A5DBA9C5-CFF0-4D78-9F9D-1FB2324A49CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A5DBA9C5-CFF0-4D78-9F9D-1FB2324A49CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A5DBA9C5-CFF0-4D78-9F9D-1FB2324A49CB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{106AF38C-6F73-4FA9-B493-7A0BB95A2785} = {5FABA6AC-7DC0-47D0-A949-37C78AE003BE}
+		{702E0C20-4191-4F9B-9E5F-25CF99DF4648} = {5FABA6AC-7DC0-47D0-A949-37C78AE003BE}
+		{97C84684-532D-425D-8D03-7D027ED29DB9} = {5FABA6AC-7DC0-47D0-A949-37C78AE003BE}
+		{19CD8051-E2E5-485B-861F-25CCE642E99B} = {5FABA6AC-7DC0-47D0-A949-37C78AE003BE}
+		{A5DBA9C5-CFF0-4D78-9F9D-1FB2324A49CB} = {5FABA6AC-7DC0-47D0-A949-37C78AE003BE}
 	EndGlobalSection
 EndGlobal

@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Controls;
@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Linq;
+using SmartAudioSwitcher.App.Services;
 
 namespace SmartAudioSwitcher.App;
 
@@ -27,7 +28,7 @@ public partial class MainWindow : Window
     private RoutingNode? _connectionSourceNode = null;
 
     public MainWindow(
-        ILogger<MainWindow> logger, 
+        ILogger<MainWindow> logger,
         ISystemTrayService trayService,
         IAudioDeviceService deviceService,
         IAudioSessionService sessionService,
@@ -40,11 +41,13 @@ public partial class MainWindow : Window
         _sessionService = sessionService;
         _processMonitor = processMonitor;
         _sonicFlowEngine = sonicFlowEngine;
-        
+
         InitializeComponent();
-        
+
+        // DataContext set from Program.cs via DI - VM resolved by host lifetime
+        // NO instantiation here - VM is injected through constructor and DataContext set in Program.cs
         this.ShowInTaskbar = true;
-        
+
         // Setup profile directory
         _profileDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -79,7 +82,7 @@ public partial class MainWindow : Window
         MainCanvas.MouseMove += OnCanvasMouseMove;
         MainCanvas.MouseLeftButtonUp += OnCanvasMouseLeftButtonUp;
         MainCanvas.MouseLeftButtonDown += OnCanvasMouseLeftButtonDown;
-        
+
         // Subscribe to SonicFlow engine events
         _sonicFlowEngine.RouteApplied += OnRouteApplied;
         _sonicFlowEngine.RouteError += OnRouteError;
@@ -138,7 +141,7 @@ public partial class MainWindow : Window
         }
         _nodeCounter = 0;
         PopulateInitialNodes();
-        
+
         _trayService.ShowNotification("SonicFlow", "Nodes refreshed with current devices and processes", NotificationType.Info);
     }
 
@@ -157,9 +160,9 @@ public partial class MainWindow : Window
             var processes = _processMonitor.GetRunningProcesses();
 
             var appliedCount = await _sonicFlowEngine.ApplyRoutesAsync(routes, devices, processes);
-            
-            _trayService.ShowNotification("SonicFlow", 
-                $"Applied {appliedCount} of {routes.Count} routes", 
+
+            _trayService.ShowNotification("SonicFlow",
+                $"Applied {appliedCount} of {routes.Count} routes",
                 appliedCount > 0 ? NotificationType.Success : NotificationType.Error);
         }
         catch (Exception ex)
@@ -179,7 +182,7 @@ public partial class MainWindow : Window
             var sourceId = conn.Source.GetHashCode().ToString();
             var targetId = conn.Target.GetHashCode().ToString();
 
-            if (nodes.TryGetValue(sourceId, out var source) && 
+            if (nodes.TryGetValue(sourceId, out var source) &&
                 nodes.TryGetValue(targetId, out var target))
             {
                 // Ensure source is app, target is device
@@ -196,8 +199,7 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    _logger.LogWarning("Invalid connection: {SourceType} -> {TargetType}", 
-                        source.NodeType, target.NodeType);
+                    _logger.LogWarning("Invalid connection: {SourceType} -> {TargetType}", source.NodeType, target.NodeType);
                     continue;
                 }
 
@@ -295,17 +297,15 @@ public partial class MainWindow : Window
 
     private void OnConnectionCreated(object? sender, Connection connection)
     {
-        _logger.LogInformation("Connection created: {Source} -> {Target}", 
-            connection.Source.NodeTitle, connection.Target.NodeTitle);
-        
+        _logger.LogInformation("Connection created: {Source} -> {Target}", connection.Source.NodeTitle, connection.Target.NodeTitle);
+
         connection.Source.IsConnectionSource = false;
         connection.Target.IsSelectedForConnection = false;
     }
 
     private void OnConnectionRemoved(object? sender, Connection connection)
     {
-        _logger.LogInformation("Connection removed: {Source} -> {Target}", 
-            connection.Source.NodeTitle, connection.Target.NodeTitle);
+        _logger.LogInformation("Connection removed: {Source} -> {Target}", connection.Source.NodeTitle, connection.Target.NodeTitle);
     }
 
     private void OnRouteApplied(object? sender, RouteAppliedEventArgs e)
@@ -323,8 +323,7 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            _logger.LogError("Route error: {Source} -> {Target}: {Error}", 
-                e.SourceName, e.TargetName, e.ErrorMessage);
+            _logger.LogError("Route error: {Source} -> {Target}: {Error}", e.SourceName, e.TargetName, e.ErrorMessage);
         });
     }
 
@@ -335,7 +334,7 @@ public partial class MainWindow : Window
 
         var profileName = Microsoft.VisualBasic.Interaction.InputBox(
             "Enter profile name:", "Save SonicFlow Profile", "MyProfile");
-        
+
         if (string.IsNullOrWhiteSpace(profileName)) return;
 
         var fileName = $"{profileName}.json";
@@ -346,11 +345,11 @@ public partial class MainWindow : Window
             var options = new JsonSerializerOptions { WriteIndented = true };
             var json = JsonSerializer.Serialize(profile, options);
             File.WriteAllText(filePath, json);
-            
-            _trayService.ShowNotification("SonicFlow", $"Profile '{profileName}' saved successfully", 
+
+            _trayService.ShowNotification("SonicFlow", $"Profile '{profileName}' saved successfully",
                 NotificationType.Success);
             _logger.LogInformation("Profile saved: {Path}", filePath);
-            
+
             RefreshProfileList();
         }
         catch (Exception ex)
@@ -388,12 +387,12 @@ public partial class MainWindow : Window
         {
             var json = File.ReadAllText(filePath);
             var profile = JsonSerializer.Deserialize<SonicFlowProfile>(json);
-            
+
             if (profile != null)
             {
                 ClearCanvasInternal();
                 RestoreProfileToCanvas(profile);
-                
+
                 _trayService.ShowNotification("SonicFlow", $"Profile '{profile.Name}' loaded", NotificationType.Success);
                 _logger.LogInformation("Profile loaded: {Path}", filePath);
             }
@@ -413,14 +412,14 @@ public partial class MainWindow : Window
     private void ClearCanvasInternal()
     {
         MainCanvas.ClearConnections();
-        
+
         var nodes = MainCanvas.Children.OfType<RoutingNode>().ToList();
         foreach (var node in nodes)
         {
             node.ConnectionRequested -= OnNodeConnectionRequested;
             MainCanvas.Children.Remove(node);
         }
-        
+
         _nodeCounter = 0;
     }
 
@@ -456,7 +455,7 @@ public partial class MainWindow : Window
         {
             var sourceNodeData = profile.Nodes.FirstOrDefault(n => n.Id == conn.Source.GetHashCode().ToString());
             var targetNodeData = profile.Nodes.FirstOrDefault(n => n.Id == conn.Target.GetHashCode().ToString());
-            
+
             if (sourceNodeData != null && targetNodeData != null)
             {
                 profile.Connections.Add(new ConnectionData
@@ -482,12 +481,12 @@ public partial class MainWindow : Window
                 ProcessName = nodeData.ProcessName,
                 DeviceId = nodeData.DeviceId
             };
-            
+
             Canvas.SetLeft(node, nodeData.Left);
             Canvas.SetTop(node, nodeData.Top);
             node.ConnectionRequested += OnNodeConnectionRequested;
             MainCanvas.Children.Add(node);
-            
+
             nodeMap[nodeData.Id] = node;
         }
 
@@ -553,7 +552,7 @@ public partial class MainWindow : Window
     private void HideWindow()
     {
         Hide();
-        _trayService.ShowNotification("SmartAudioSwitcher", "Running in background. Click tray icon to restore.", 
+        _trayService.ShowNotification("SmartAudioSwitcher", "Running in background. Click tray icon to restore.",
             NotificationType.Info);
     }
 

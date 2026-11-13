@@ -54,3 +54,6 @@ appsettings.Local.json
 !/.vscode/tasks.json
 !/.vscode/launch.json
 !/.vscode/extensions.json
+# CI portable output
+artifacts/
+build_output.txt

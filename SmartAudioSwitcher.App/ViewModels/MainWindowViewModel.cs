@@ -76,7 +76,7 @@ public class MainWindowViewModel : INotifyPropertyChanged
 
     public void OnDeviceChanged(DeviceEvent e)
     {
-        Application.Current.Dispatcher.Invoke(() =>
+        Application.Current.Dispatcher.InvokeAsync(() =>
         {
             var existing = Devices.FirstOrDefault(d => d.Id == e.Device.Id);
             if (existing != null)
@@ -94,7 +94,7 @@ public class MainWindowViewModel : INotifyPropertyChanged
 
     public void OnProcessEvent(ProcessEvent e)
     {
-        Application.Current.Dispatcher.Invoke(() =>
+        Application.Current.Dispatcher.InvokeAsync(() =>
         {
             UpdateStatus($"Process {e.Type}: {e.ProcessName} (PID: {e.ProcessId})");
         });
@@ -102,7 +102,7 @@ public class MainWindowViewModel : INotifyPropertyChanged
 
     public void OnSessionEvent(AudioSessionEvent e)
     {
-        Application.Current.Dispatcher.Invoke(() =>
+        Application.Current.Dispatcher.InvokeAsync(() =>
         {
             // Update session info if needed
         });
@@ -110,7 +110,7 @@ public class MainWindowViewModel : INotifyPropertyChanged
 
     public void OnRoutingDecision(RoutingDecision decision, string reason)
     {
-        Application.Current.Dispatcher.Invoke(() =>
+        Application.Current.Dispatcher.InvokeAsync(() =>
         {
             var existing = ActiveRouting.FirstOrDefault(r => r.ProcessName == "Default");
             if (existing != null)
@@ -151,7 +151,7 @@ public class MainWindowViewModel : INotifyPropertyChanged
 
     public void OnSettingsChanged(AppSettings settings)
     {
-        Application.Current.Dispatcher.Invoke(() =>
+        Application.Current.Dispatcher.InvokeAsync(() =>
         {
             Profiles.Clear();
             foreach (var profile in settings.Profiles)
@@ -186,13 +186,16 @@ public class MainWindowViewModel : INotifyPropertyChanged
 
     private void OpenSettings()
     {
-        // Open settings window
-        _logger.LogInformation("Open settings requested");
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_configService.GetConfigPath()) { UseShellExecute = true });
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Unable to open configuration"); }
     }
 
     private void MinimizeToTray()
     {
-        // Handled by window
+        Application.Current?.MainWindow?.Hide();
     }
 
     private void UpdateStatus(string message)
@@ -219,7 +222,7 @@ public class MainWindowViewModel : INotifyPropertyChanged
 public class DeviceViewModel : INotifyPropertyChanged
 {
     public string Id { get; }
-    public string FriendlyName { get; private set; }
+    public string FriendlyName { get; private set; } = "";
     public DeviceType Type { get; private set; }
     public DeviceRole Role { get; private set; }
     public bool IsConnected { get; private set; }
@@ -316,7 +319,12 @@ public class ProfileViewModel : INotifyPropertyChanged
     public int TriggerCount { get; }
     public int ExceptionCount { get; }
     public bool Enabled { get; }
-    public bool IsActive { get; set; }
+    private bool _isActive;
+    public bool IsActive
+    {
+        get => _isActive;
+        set { if (_isActive == value) return; _isActive = value; OnPropertyChanged(); }
+    }
 
     public ProfileViewModel(Profile profile)
     {
@@ -347,5 +355,9 @@ public class RelayCommand : ICommand
 
     public bool CanExecute(object? parameter) => _canExecute?.Invoke() ?? true;
     public void Execute(object? parameter) => _execute();
-    public event EventHandler? CanExecuteChanged;
+    public event EventHandler? CanExecuteChanged
+    {
+        add => CommandManager.RequerySuggested += value;
+        remove => CommandManager.RequerySuggested -= value;
+    }
 }

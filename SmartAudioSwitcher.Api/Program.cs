@@ -2,6 +2,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.Hosting;
+using System.Net;
+using Microsoft.Extensions.Configuration;
 using SmartAudioSwitcher.Core.Interfaces;
 using SmartAudioSwitcher.Core.Models;
 using SmartAudioSwitcher.Core.Services;
@@ -14,7 +17,24 @@ builder.Logging.AddConsole();
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 // Add services
-builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
+using var bootstrapLogs = LoggerFactory.Create(logging => logging.AddConsole());
+var configService = new ConfigurationService(bootstrapLogs.CreateLogger<ConfigurationService>());
+var settings = configService.LoadSettings();
+var apiOptions = ApiHostOptions.Resolve(settings.Api);
+if (apiOptions.Error is not null) throw new InvalidOperationException(apiOptions.Error);
+if (!apiOptions.Enabled)
+{
+    Console.WriteLine("API disabled in configuration; no listener or audio monitor started");
+    return;
+}
+// Ignore URL/Kestrel endpoint overrides: remote access is not supported.
+builder.WebHost.UseUrls(apiOptions.Url!);
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Configure(new ConfigurationBuilder().Build());
+    options.Listen(IPAddress.Loopback, settings.Api.Port);
+});
+builder.Services.AddSingleton<IConfigurationService>(configService);
 builder.Services.AddSingleton<IProfileEngine, ProfileEngine>();
 builder.Services.AddSingleton<IAudioDeviceService, AudioDeviceService>();
 builder.Services.AddSingleton<IAudioSessionService, AudioSessionService>();
@@ -23,23 +43,19 @@ builder.Services.AddSingleton<IProcessMonitorService, ProcessMonitorService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var app = builder.Build();
-
-// Initialize services
-var configService = app.Services.GetRequiredService<IConfigurationService>();
-var settings = configService.LoadSettings();
+await using var app = builder.Build();
 
 var profileEngine = app.Services.GetRequiredService<IProfileEngine>();
 profileEngine.ReloadConfiguration(settings);
 
 var deviceService = app.Services.GetRequiredService<IAudioDeviceService>();
-deviceService.StartMonitoring();
+if (apiOptions.Enabled) deviceService.StartMonitoring();
 
 var processMonitor = app.Services.GetRequiredService<IProcessMonitorService>();
-processMonitor.StartMonitoring();
+if (apiOptions.Enabled) processMonitor.StartMonitoring();
 
 var sessionService = app.Services.GetRequiredService<IAudioSessionService>();
-sessionService.StartMonitoring();
+if (apiOptions.Enabled) sessionService.StartMonitoring();
 
 if (app.Environment.IsDevelopment())
 {
@@ -123,6 +139,7 @@ api.MapPost("/devices/cycle", () =>
     var devices = deviceService.GetOutputDevices().Where(d => d.IsConnected).ToList();
     var current = deviceService.GetDefaultDevice();
     var currentIndex = devices.FindIndex(d => d.Id == current?.Id);
+    if (devices.Count == 0) return Results.BadRequest("No connected output devices available to cycle");
     var nextIndex = (currentIndex + 1) % devices.Count;
     var next = devices[nextIndex];
     
@@ -173,8 +190,8 @@ api.MapGet("/profiles", () =>
 api.MapGet("/profiles/active", () => 
 {
     var devices = deviceService.GetOutputDevices();
+    if (devices.Count == 0) return Results.Problem("No connected output devices", statusCode: 503);
     var processes = processMonitor.GetRunningProcesses();
-    
     var profile = profileEngine.EvaluateProfile(devices, processes);
     if (profile == null) return Results.NotFound("No profile matched");
 
@@ -228,14 +245,14 @@ api.MapGet("/status", () =>
 {
     var defaultDevice = deviceService.GetDefaultDevice();
     var devices = deviceService.GetOutputDevices();
+    if (devices.Count == 0) return Results.Problem("No connected output devices", statusCode: 503);
     var processes = processMonitor.GetRunningProcesses();
-    
     var profile = profileEngine.EvaluateProfile(devices, processes);
     
     return Results.Ok(new
     {
         running = true,
-        version = "1.0.0",
+        version = "0.0.1",
         defaultDevice = defaultDevice != null ? new { defaultDevice.Id, defaultDevice.FriendlyName } : null,
         connectedDevices = devices.Count(d => d.IsConnected),
         totalDevices = devices.Count,
@@ -255,4 +272,4 @@ api.MapGet("/config", () =>
 api.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
    .WithName("HealthCheck").WithOpenApi();
 
-app.Run();
+await app.RunAsync();
