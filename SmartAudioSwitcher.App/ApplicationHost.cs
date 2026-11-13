@@ -9,7 +9,6 @@ public class ApplicationHost : IApplicationHost, IHostedService
     private readonly ILogger<ApplicationHost> _logger;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly MainWindow _mainWindow;
-    private TaskCompletionSource<object?>? _runTcs;
 
     public event EventHandler? ShutdownRequested;
 
@@ -22,34 +21,30 @@ public class ApplicationHost : IApplicationHost, IHostedService
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        _runTcs = new TaskCompletionSource<object?>();
-        
         _logger.LogInformation("Application host starting...");
-        
-        // Start the WPF message loop on the UI thread
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                _mainWindow.Show();
-                System.Windows.Threading.Dispatcher.Run();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "UI thread error");
-                _runTcs?.TrySetException(ex);
-            }
-        });
+
+        // WPF App.Run() already provides the message loop on UI thread
+        // No need for Task.Run or Dispatcher.Run - just show the window
+        _mainWindow.Show();
 
         // Wait for shutdown signal
-        using var reg = cancellationToken.Register(() => 
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var reg = cts.Token.Register(() =>
         {
-            _runTcs?.TrySetCanceled();
             _lifetime.StopApplication();
         });
 
-        await _runTcs.Task;
-        
+        // When App.Shutdown is called, the message loop exits
+        // Wait for the lifetime to stop the application
+        try
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on shutdown
+        }
+
         _logger.LogInformation("Application host stopped");
     }
 
@@ -57,14 +52,14 @@ public class ApplicationHost : IApplicationHost, IHostedService
     {
         _logger.LogInformation("Shutdown requested");
         ShutdownRequested?.Invoke(this, EventArgs.Empty);
-        
+
+        // Close the main window which will exit the message loop
         _mainWindow.Dispatcher.InvokeAsync(() =>
         {
             _mainWindow.Close();
-            System.Windows.Threading.Dispatcher.ExitAllFrames();
         });
-        
-        _runTcs?.TrySetResult(null);
+
+        _lifetime.StopApplication();
     }
 
     public Task StartAsync(CancellationToken cancellationToken)

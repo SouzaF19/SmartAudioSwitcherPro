@@ -1,58 +1,56 @@
 using SmartAudioSwitcher.Core.Interfaces;
 using SmartAudioSwitcher.Core.Models;
+using SmartAudioSwitcher.Platform.CoreAudio;
 using NAudio.CoreAudioApi;
 using Microsoft.Extensions.Logging;
 
 namespace SmartAudioSwitcher.Platform.Services;
-
-public class AudioDeviceService : IAudioDeviceService, IDisposable
+public sealed class AudioDeviceService : IAudioDeviceService, IDisposable
 {
-    private readonly ILogger<AudioDeviceService> _logger;
-    private readonly MMDeviceEnumerator _enumerator;
-    private readonly List<AudioDevice> _cachedDevices = new();
-    private bool _disposed;
-
+    readonly ILogger<AudioDeviceService> _logger;
+    readonly IAudioEndpointBackend _backend;
+    readonly object _gate = new();
+    AudioDevice[] _devices = Array.Empty<AudioDevice>();
+    bool _monitoring, _disposed;
     public event EventHandler<DeviceEvent>? DeviceChanged;
+    public AudioDeviceService(ILogger<AudioDeviceService> logger) : this(logger, new WindowsAudioEndpointBackend())
+    {
+    }
 
-    public AudioDeviceService(ILogger<AudioDeviceService> logger)
+    public AudioDeviceService(ILogger<AudioDeviceService> logger, IAudioEndpointBackend backend)
     {
         _logger = logger;
-        _enumerator = new MMDeviceEnumerator();
-        RefreshDevices();
+        _backend = backend;
+        _backend.Changed += OnNotification;
+        Refresh();
     }
 
     public IReadOnlyList<AudioDevice> GetAllDevices()
     {
-        return _cachedDevices.AsReadOnly();
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            return Array.AsReadOnly(_devices);
+        }
     }
 
-    public IReadOnlyList<AudioDevice> GetOutputDevices()
-    {
-        return _cachedDevices.Where(d => d.IsConnected).ToList().AsReadOnly();
-    }
-
-    public AudioDevice? GetDeviceById(string deviceId)
-    {
-        return _cachedDevices.FirstOrDefault(d => d.Id == deviceId);
-    }
-
+    public IReadOnlyList<AudioDevice> GetOutputDevices() => GetAllDevices().Where(d => d.IsConnected).ToArray();
+    public AudioDevice? GetDeviceById(string deviceId) => GetAllDevices().FirstOrDefault(d => d.Id == deviceId);
     public AudioDevice? GetDefaultDevice(DeviceRole role = DeviceRole.Default)
     {
-        var naudioRole = role switch
+        lock (_gate)
         {
-            DeviceRole.Communications => Role.Communications,
-            _ => Role.Console
-        };
-
-        try
-        {
-            var device = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, naudioRole);
-            return _cachedDevices.FirstOrDefault(d => d.Id == device.ID);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get default device for role {Role}", role);
-            return null;
+            ThrowIfDisposed();
+            try
+            {
+                var id = _backend.GetDefaultId(role == DeviceRole.Communications ? Role.Communications : Role.Console);
+                return _devices.FirstOrDefault(d => d.Id == id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Default endpoint read failed");
+                return null;
+            }
         }
     }
 
@@ -60,200 +58,150 @@ public class AudioDeviceService : IAudioDeviceService, IDisposable
     {
         try
         {
-            var device = _enumerator.GetDevice(deviceId);
-            if (device == null)
+            lock (_gate)
             {
-                _logger.LogWarning("Device not found: {DeviceId}", deviceId);
-                return false;
+                ThrowIfDisposed();
+                if (string.IsNullOrWhiteSpace(deviceId) || !Enum.IsDefined(role))
+                    return false;
+                try
+                {
+                    if (!_backend.Snapshot().Any(d => d.Id == deviceId && d.IsConnected))
+                        return false;
+                    var roles = role switch
+                    {
+                        DeviceRole.Default => new[]
+                        {
+                            Role.Console,
+                            Role.Multimedia
+                        },
+                        DeviceRole.Communications => new[]
+                        {
+                            Role.Communications
+                        },
+                        _ => new[]
+                        {
+                            Role.Console,
+                            Role.Multimedia,
+                            Role.Communications
+                        }
+                    };
+                    foreach (var r in roles)
+                        _backend.SetDefault(deviceId, r);
+                    return roles.All(r => _backend.GetDefaultId(r) == deviceId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Policy failed; roles may be partially changed for {DeviceId}", deviceId);
+                    return false;
+                }
             }
-
-            // Note: Setting default device programmatically requires elevation in newer Windows
-            // This is a limitation - we can only request the change via policy
-            _logger.LogInformation("Requested default device change to {DeviceId} (Role: {Role})", deviceId, role);
-            
-            // Force refresh
-            RefreshDevices();
-            return true;
         }
-        catch (Exception ex)
+        finally
         {
-            _logger.LogError(ex, "Failed to set default device {DeviceId}", deviceId);
-            return false;
+            // Publish subscriber events only after releasing the mutation lock.
+            Refresh();
         }
     }
 
     public void StartMonitoring()
     {
-        _logger.LogDebug("Audio device monitoring started");
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            if (_monitoring)
+                return;
+            _backend.StartMonitoring();
+            _monitoring = true;
+        }
+
+        Refresh();
     }
 
     public void StopMonitoring()
     {
-        _logger.LogDebug("Audio device monitoring stopped");
-    }
-
-    internal void OnDeviceNotification()
-    {
-        RefreshDevices();
-    }
-
-    private void RefreshDevices()
-    {
-        var newDevices = new List<AudioDevice>();
-
-        try
+        lock (_gate)
         {
-            var endpoints = _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active | DeviceState.Unplugged);
-            
-            foreach (var endpoint in endpoints)
-            {
-                var device = ConvertToAudioDevice(endpoint);
-                if (device != null)
-                {
-                    newDevices.Add(device);
-                }
-            }
-
-            DetectChanges(_cachedDevices, newDevices);
-
-            _cachedDevices.Clear();
-            _cachedDevices.AddRange(newDevices);
-            
-            _logger.LogDebug("Refreshed audio devices: {Count} found", _cachedDevices.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to refresh audio devices");
+            if (!_monitoring)
+                return;
+            _backend.StopMonitoring();
+            _monitoring = false;
         }
     }
 
-    private AudioDevice? ConvertToAudioDevice(MMDevice device)
+    void OnNotification()
     {
-        try
+        lock (_gate)
         {
-            var type = DetermineDeviceType(device);
-            var role = DetermineDeviceRole(device);
-            var isConnected = device.State == DeviceState.Active;
-            
-            var isDefault = false;
-            var isCommDefault = false;
-            
+            if (_disposed || !_monitoring)
+                return;
+        }
+
+        Refresh();
+    }
+
+    void Refresh()
+    {
+        List<DeviceEvent> events = new();
+        lock (_gate)
+        {
+            if (_disposed)
+                return;
             try
             {
-                var defaultConsole = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
-                var defaultComm = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Communications);
-                isDefault = defaultConsole?.ID == device.ID;
-                isCommDefault = defaultComm?.ID == device.ID;
+                var next = _backend.Snapshot().ToArray();
+                var previous = _devices;
+                _devices = next;
+                foreach (var item in next)
+                {
+                    var old = previous.FirstOrDefault(d => d.Id == item.Id);
+                    if (old == null)
+                        events.Add(new(item.IsConnected ? DeviceEventType.Connected : DeviceEventType.Disconnected, item, DateTime.UtcNow));
+                    else
+                    {
+                        if (old.IsConnected != item.IsConnected)
+                            events.Add(new(item.IsConnected ? DeviceEventType.Connected : DeviceEventType.Disconnected, item, DateTime.UtcNow));
+                        if (old.IsDefault != item.IsDefault || old.IsCommunicationsDefault != item.IsCommunicationsDefault)
+                            events.Add(new(DeviceEventType.DefaultChanged, item, DateTime.UtcNow));
+                        if (old.FriendlyName != item.FriendlyName || old.Type != item.Type)
+                            events.Add(new(DeviceEventType.PropertyChanged, item, DateTime.UtcNow));
+                    }
+                }
+
+                foreach (var old in previous.Where(o => !next.Any(n => n.Id == o.Id)))
+                    events.Add(new(DeviceEventType.Disconnected, old with { IsConnected = false }, DateTime.UtcNow));
             }
-            catch { }
-
-            return new AudioDevice(
-                Id: device.ID,
-                FriendlyName: device.FriendlyName,
-                DeviceInterfacePath: device.ID,
-                Type: type,
-                Role: role,
-                IsConnected: isConnected,
-                IsDefault: isDefault,
-                IsCommunicationsDefault: isCommDefault,
-                FormFactor: null
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to convert device {DeviceId}", device.ID);
-            return null;
-        }
-    }
-
-    private DeviceType DetermineDeviceType(MMDevice device)
-    {
-        var name = device.FriendlyName.ToLowerInvariant();
-        
-        if (name.Contains("vb-cable") || name.Contains("voicemeeter") || name.Contains("virtual") || name.Contains("cable output"))
-            return DeviceType.Virtual;
-
-        if (name.Contains("bluetooth") || name.Contains("hands-free") || (name.Contains("headset") && name.Contains("bluetooth")))
-            return DeviceType.Bluetooth;
-
-        if (name.Contains("hdmi") || name.Contains("display") || name.Contains("monitor") || 
-            name.Contains("tv") || name.Contains("lg ") || name.Contains("samsung ") || 
-            name.Contains("dell ") || name.Contains("hp ") || name.Contains("asus ") || name.Contains("acer "))
-            return DeviceType.Hdmi;
-
-        if (name.Contains("headset") || name.Contains("headphone") || name.Contains("wh-1000xm") || 
-            name.Contains("g pro") || name.Contains("arctis") || name.Contains("razer") || 
-            name.Contains("hyperx") || name.Contains("corsair") || (name.Contains("logitech") && !name.Contains("speaker")))
-            return DeviceType.Headset;
-
-        if (name.Contains("speaker") || name.Contains("realtek") || name.Contains("audio") || name.Contains("sound"))
-            return DeviceType.Speakers;
-
-        return DeviceType.Unknown;
-    }
-
-    private DeviceRole DetermineDeviceRole(MMDevice device)
-    {
-        var isDefault = false;
-        var isCommDefault = false;
-        
-        try
-        {
-            var defaultConsole = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
-            var defaultComm = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Communications);
-            isDefault = defaultConsole?.ID == device.ID;
-            isCommDefault = defaultComm?.ID == device.ID;
-        }
-        catch { }
-
-        if (isDefault && isCommDefault) return DeviceRole.Both;
-        if (isDefault) return DeviceRole.Default;
-        if (isCommDefault) return DeviceRole.Communications;
-        return DeviceRole.Default;
-    }
-
-    private void DetectChanges(List<AudioDevice> oldDevices, List<AudioDevice> newDevices)
-    {
-        var oldIds = oldDevices.Select(d => d.Id).ToHashSet();
-        var newIds = newDevices.Select(d => d.Id).ToHashSet();
-
-        foreach (var id in newIds.Except(oldIds))
-        {
-            var device = newDevices.First(d => d.Id == id);
-            DeviceChanged?.Invoke(this, new DeviceEvent(DeviceEventType.Connected, device, DateTime.Now));
-        }
-
-        foreach (var id in oldIds.Except(newIds))
-        {
-            var device = oldDevices.First(d => d.Id == id);
-            DeviceChanged?.Invoke(this, new DeviceEvent(DeviceEventType.Disconnected, device, DateTime.Now));
-        }
-
-        foreach (var id in oldIds.Intersect(newIds))
-        {
-            var old = oldDevices.First(d => d.Id == id);
-            var @new = newDevices.First(d => d.Id == id);
-            
-            if (old.IsDefault != @new.IsDefault || old.IsCommunicationsDefault != @new.IsCommunicationsDefault)
+            catch (Exception ex)
             {
-                DeviceChanged?.Invoke(this, new DeviceEvent(DeviceEventType.DefaultChanged, @new, DateTime.Now));
-            }
-            
-            if (old.IsConnected != @new.IsConnected)
-            {
-                DeviceChanged?.Invoke(this, new DeviceEvent(
-                    @new.IsConnected ? DeviceEventType.Connected : DeviceEventType.Disconnected, 
-                    @new, DateTime.Now));
+                _logger.LogError(ex, "Endpoint refresh failed; retaining snapshot");
             }
         }
+
+        foreach (var item in events)
+            foreach (EventHandler<DeviceEvent> handler in DeviceChanged?.GetInvocationList() ?? Array.Empty<Delegate>())
+                try
+                {
+                    handler(this, item);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Device subscriber failed");
+                }
     }
 
+    void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
     public void Dispose()
     {
-        if (!_disposed)
+        lock (_gate)
         {
-            _enumerator.Dispose();
-            _disposed = true;
+            if (_disposed)
+                return;
+            try { StopMonitoring(); }
+            finally
+            {
+                _disposed = true;
+                _backend.Changed -= OnNotification;
+                _backend.Dispose();
+            }
         }
     }
 }

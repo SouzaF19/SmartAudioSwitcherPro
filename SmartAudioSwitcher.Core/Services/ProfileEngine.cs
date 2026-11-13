@@ -8,10 +8,16 @@ public class ProfileEngine : IProfileEngine
 {
     private AppSettings _settings = new();
     private readonly ILogger<ProfileEngine> _logger;
+    private readonly TimeProvider _timeProvider;
+    private readonly Func<bool> _isDocked;
 
-    public ProfileEngine(ILogger<ProfileEngine> logger)
+    public ProfileEngine(ILogger<ProfileEngine> logger) : this(logger, TimeProvider.System, () => false) { }
+
+    public ProfileEngine(ILogger<ProfileEngine> logger, TimeProvider timeProvider, Func<bool> isDocked)
     {
         _logger = logger;
+        _timeProvider = timeProvider;
+        _isDocked = isDocked;
     }
 
     public void ReloadConfiguration(AppSettings settings)
@@ -22,8 +28,8 @@ public class ProfileEngine : IProfileEngine
 
     public Profile? EvaluateProfile(IReadOnlyList<AudioDevice> devices, IReadOnlyList<ProcessInfo> processes)
     {
-        var now = DateTime.Now;
-        var isDocked = IsDocked(); // Simplified - would check actual dock state
+        var now = _timeProvider.GetLocalNow().DateTime;
+        var isDocked = _isDocked();
 
         foreach (var profile in _settings.Profiles.Where(p => p.Enabled))
         {
@@ -35,7 +41,7 @@ public class ProfileEngine : IProfileEngine
         }
 
         // Fallback to default profile
-        var defaultProfile = _settings.Profiles.FirstOrDefault(p => p.Name.Equals("Default", StringComparison.OrdinalIgnoreCase));
+        var defaultProfile = _settings.Profiles.FirstOrDefault(p => p.Enabled && p.Name.Equals("Default", StringComparison.OrdinalIgnoreCase));
         if (defaultProfile != null)
         {
             _logger.LogDebug("Using default profile");
@@ -51,13 +57,10 @@ public class ProfileEngine : IProfileEngine
         if (profile.Triggers.Count == 0)
             return true; // Catch-all profile
 
-        foreach (var trigger in profile.Triggers)
-        {
-            if (EvaluateTrigger(trigger, devices, processes, now, isDocked))
-                return true; // Any trigger matches (OR logic)
-        }
-
-        return false;
+        var alternatives = profile.Triggers.Where(t => t.Type is ProfileTriggerType.ProcessMatch or ProfileTriggerType.WindowTitleMatch).ToArray();
+        var context = profile.Triggers.Where(t => t.Type is not (ProfileTriggerType.ProcessMatch or ProfileTriggerType.WindowTitleMatch));
+        return context.All(t => EvaluateTrigger(t, devices, processes, now, isDocked)) &&
+            (alternatives.Length == 0 || alternatives.Any(t => EvaluateTrigger(t, devices, processes, now, isDocked)));
     }
 
     private bool EvaluateTrigger(ProfileTrigger trigger, IReadOnlyList<AudioDevice> devices, IReadOnlyList<ProcessInfo> processes, DateTime now, bool isDocked)
@@ -65,8 +68,8 @@ public class ProfileEngine : IProfileEngine
         return trigger.Type switch
         {
             ProfileTriggerType.ProcessMatch => processes.Any(p => 
-                MatchesPattern(p.ProcessName, trigger.Value ?? "") ||
-                (p.MainModulePath != null && MatchesPattern(p.MainModulePath, trigger.Value ?? ""))),
+                MatchesProcessPattern(p.ProcessName, trigger.Value ?? "") ||
+                (p.MainModulePath != null && MatchesProcessPattern(Path.GetFileName(p.MainModulePath), trigger.Value ?? ""))),
 
             ProfileTriggerType.WindowTitleMatch => processes.Any(p => 
                 p.WindowTitle != null && MatchesPattern(p.WindowTitle, trigger.Value ?? "")),
@@ -126,32 +129,18 @@ public class ProfileEngine : IProfileEngine
         if (string.IsNullOrEmpty(pattern)) return false;
         if (string.IsNullOrEmpty(input)) return false;
 
-        // Support wildcards: * at start, end, or both
-        if (pattern == "*") return true;
-        
-        if (pattern.StartsWith("*") && pattern.EndsWith("*"))
-        {
-            return input.Contains(pattern[1..^1], StringComparison.OrdinalIgnoreCase);
-        }
-        else if (pattern.StartsWith("*"))
-        {
-            return input.EndsWith(pattern[1..], StringComparison.OrdinalIgnoreCase);
-        }
-        else if (pattern.EndsWith("*"))
-        {
-            return input.StartsWith(pattern[..^1], StringComparison.OrdinalIgnoreCase);
-        }
-        else
-        {
-            return input.Equals(pattern, StringComparison.OrdinalIgnoreCase);
-        }
+        var regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern).Replace(@"\*", ".*") + "$";
+        return System.Text.RegularExpressions.Regex.IsMatch(input, regex, System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.NonBacktracking);
     }
 
-    private bool IsDocked()
+    private bool MatchesProcessPattern(string processName, string pattern)
     {
-        // Simplified - in reality would check WMI for docking station
-        // For now, assume docked if multiple monitors detected
-        return true;
+        static string Normalize(string value)
+        {
+            value = Path.GetFileName(value);
+            return value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? value[..^4] : value;
+        }
+        return MatchesPattern(Normalize(processName), Normalize(pattern));
     }
 
     public RoutingDecision DecideRouting(Profile profile, AudioDevice? currentDevice, ProcessInfo? process, IReadOnlyList<AudioDevice> availableDevices)
@@ -159,8 +148,10 @@ public class ProfileEngine : IProfileEngine
         var connectedDevices = availableDevices.Where(d => d.IsConnected).ToList();
         
         // If specific process has an exception, use that
-        if (process != null && profile.ProcessExceptions.TryGetValue(process.ProcessName, out var exceptionDeviceType))
+        var exception = process == null ? default : profile.ProcessExceptions.FirstOrDefault(rule => MatchesProcessPattern(process.ProcessName, rule.Key));
+        if (process != null && exception.Key != null)
         {
+            var exceptionDeviceType = exception.Value;
             var device = FindDeviceByType(connectedDevices, exceptionDeviceType);
             if (device != null)
             {
@@ -235,6 +226,7 @@ public class ProfileEngine : IProfileEngine
     private AudioDevice? FindDeviceByType(IReadOnlyList<AudioDevice> devices, string typeName)
     {
         var normalizedType = typeName.ToLowerInvariant();
+        if (normalizedType == "system_default") return devices.FirstOrDefault(d => d.IsDefault);
         
         // First try exact type match
         var exactMatch = devices.FirstOrDefault(d => 

@@ -1,6 +1,7 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Parsing;
+using System.CommandLine.Invocation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -11,90 +12,74 @@ using SmartAudioSwitcher.Platform.Services;
 
 namespace SmartAudioSwitcher.CLI;
 
-class Program
+public class Program
 {
-    static async Task<int> Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
-        var builder = Host.CreateApplicationBuilder(args);
-        
-        builder.Logging.ClearProviders();
-        builder.Logging.AddConsole();
-        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+        using var host = new LazyHost();
+        return await RunAsync(args, host.GetServices);
+    }
 
-        builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
-        builder.Services.AddSingleton<IProfileEngine, ProfileEngine>();
-        builder.Services.AddSingleton<IAudioDeviceService, AudioDeviceService>();
-        builder.Services.AddSingleton<IAudioSessionService, AudioSessionService>();
-        builder.Services.AddSingleton<IProcessMonitorService, ProcessMonitorService>();
+    // The factory is evaluated only by commands that need hardware or settings.
+    public static async Task<int> RunAsync(string[] args, Func<IServiceProvider> serviceFactory)
+    {
+        var root = new RootCommand("SmartAudioSwitcher CLI - Control Windows audio devices");
+        T Service<T>() where T : notnull => serviceFactory().GetRequiredService<T>();
+        int Execute(Func<int> action)
+        {
+            try { return action(); }
+            catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
+        }
+        void Add(string name, string description, Func<int> action)
+        {
+            var command = new Command(name, description);
+            command.SetHandler((InvocationContext context) => context.ExitCode = Execute(action));
+            root.AddCommand(command);
+        }
+        void AddArgument(string name, string description, Func<string, int> action)
+        {
+            var command = new Command(name, description);
+            var argument = new Argument<string>("device");
+            command.AddArgument(argument);
+            command.SetHandler((InvocationContext context) => context.ExitCode = Execute(() => action(context.ParseResult.GetValueForArgument(argument))));
+            root.AddCommand(command);
+        }
+        Add("version", "Show version", () => { Console.WriteLine("SmartAudioSwitcher CLI v0.0.1"); return 0; });
+        Add("list-devices", "List output devices", () => { ListDevices(Service<IAudioDeviceService>()); return 0; });
+        Add("get-default", "Get the default device", () => { var d = Service<IAudioDeviceService>().GetDefaultDevice(); if (d == null) return 1; Console.WriteLine($"{d.FriendlyName} ({d.Id})"); return 0; });
+        AddArgument("set-default", "Set default by ID", id => SetDefaultDevice(Service<IAudioDeviceService>(), id));
+        AddArgument("set-device", "Set default by partial name", name => SetDeviceByName(Service<IAudioDeviceService>(), name));
+        Add("cycle", "Cycle output devices", () => CycleDevice(Service<IAudioDeviceService>()));
+        Add("force-headset", "Switch to a connected headset", () => ForceHeadset(Service<IAudioDeviceService>()));
+        Add("list-profiles", "List routing profiles", () => { ListProfiles(Service<IConfigurationService>().LoadSettings()); return 0; });
+        Add("eval-profile", "Evaluate the current profile", () => {
+            var engine = Service<IProfileEngine>();
+            engine.ReloadConfiguration(Service<IConfigurationService>().LoadSettings());
+            EvaluateProfile(engine, Service<IAudioDeviceService>(), Service<IProcessMonitorService>());
+            return 0;
+        });
+        return await new CommandLineBuilder(root).UseDefaults().Build().InvokeAsync(args);
+    }
 
-        var host = builder.Build();
-
-        var configService = host.Services.GetRequiredService<IConfigurationService>();
-        var settings = configService.LoadSettings();
-        
-        var profileEngine = host.Services.GetRequiredService<IProfileEngine>();
-        profileEngine.ReloadConfiguration(settings);
-
-        var deviceService = host.Services.GetRequiredService<IAudioDeviceService>();
-        deviceService.StartMonitoring();
-
-        var processMonitor = host.Services.GetRequiredService<IProcessMonitorService>();
-
-        var rootCommand = new RootCommand("SmartAudioSwitcher CLI - Control audio devices from command line");
-
-        // List devices command
-        var listDevices = new Command("list-devices", "List all audio devices");
-        listDevices.SetHandler(() => ListDevices(deviceService));
-        rootCommand.AddCommand(listDevices);
-
-        // Get current default device
-        var getDefault = new Command("get-default", "Get current default output device");
-        getDefault.SetHandler(() => GetDefaultDevice(deviceService));
-        rootCommand.AddCommand(getDefault);
-
-        // Set default device by ID
-        var setDefault = new Command("set-default", "Set default output device by ID");
-        var deviceIdArg = new Argument<string>("device-id", "Device ID to set as default");
-        setDefault.AddArgument(deviceIdArg);
-        setDefault.SetHandler((string id) => SetDefaultDevice(deviceService, id), deviceIdArg);
-        rootCommand.AddCommand(setDefault);
-
-        // Set default by name (partial match)
-        var setDefaultByName = new Command("set-device", "Set default device by name (partial match)");
-        var nameArg = new Argument<string>("name", "Device name (partial match supported)");
-        setDefaultByName.AddArgument(nameArg);
-        setDefaultByName.SetHandler((string name) => SetDeviceByName(deviceService, name), nameArg);
-        rootCommand.AddCommand(setDefaultByName);
-
-        // List profiles
-        var listProfiles = new Command("list-profiles", "List all routing profiles");
-        listProfiles.SetHandler(() => ListProfiles(settings));
-        rootCommand.AddCommand(listProfiles);
-
-        // Evaluate current profile
-        var evalProfile = new Command("eval-profile", "Evaluate which profile would be active now");
-        evalProfile.SetHandler(() => EvaluateProfile(profileEngine, deviceService, processMonitor));
-        rootCommand.AddCommand(evalProfile);
-
-        // Cycle devices
-        var cycle = new Command("cycle", "Cycle to next output device");
-        cycle.SetHandler(() => CycleDevice(deviceService));
-        rootCommand.AddCommand(cycle);
-
-        // Force headset
-        var forceHeadset = new Command("force-headset", "Force switch to headset");
-        forceHeadset.SetHandler(() => ForceHeadset(deviceService));
-        rootCommand.AddCommand(forceHeadset);
-
-        // Version
-        var version = new Command("version", "Show version");
-        version.SetHandler(() => Console.WriteLine("SmartAudioSwitcher CLI v1.0.0"));
-        rootCommand.AddCommand(version);
-
-        var commandLineBuilder = new CommandLineBuilder(rootCommand);
-        var parser = commandLineBuilder.Build();
-        
-        return await parser.InvokeAsync(args);
+    private sealed class LazyHost : IDisposable
+    {
+        private IHost? _host;
+        public IServiceProvider GetServices()
+        {
+            if (_host != null) return _host.Services;
+            var builder = Host.CreateApplicationBuilder(Array.Empty<string>());
+            builder.Logging.ClearProviders();
+            builder.Logging.AddConsole();
+            builder.Logging.SetMinimumLevel(LogLevel.Warning);
+            builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
+            builder.Services.AddSingleton<IProfileEngine, ProfileEngine>();
+            builder.Services.AddSingleton<IAudioDeviceService, AudioDeviceService>();
+            builder.Services.AddSingleton<IAudioSessionService, AudioSessionService>();
+            builder.Services.AddSingleton<IProcessMonitorService, ProcessMonitorService>();
+            _host = builder.Build();
+            return _host.Services;
+        }
+        public void Dispose() => _host?.Dispose();
     }
 
     private static void ListDevices(IAudioDeviceService deviceService)
@@ -136,45 +121,21 @@ class Program
         }
     }
 
-    private static void SetDefaultDevice(IAudioDeviceService deviceService, string deviceId)
+    private static int SetDefaultDevice(IAudioDeviceService devices, string id)
     {
-        var device = deviceService.GetDeviceById(deviceId);
-        if (device == null)
-        {
-            Console.WriteLine($"Error: Device not found: {deviceId}");
-            return;
-        }
-
-        if (deviceService.SetDefaultDevice(deviceId))
-        {
-            Console.WriteLine($"Default device set to: {device.FriendlyName}");
-        }
-        else
-        {
-            Console.WriteLine("Failed to set default device");
-        }
+        if (devices.GetDeviceById(id) is not { IsConnected: true } device)
+        { Console.Error.WriteLine($"Connected device not found: {id}"); return 1; }
+        if (!devices.SetDefaultDevice(id))
+        { Console.Error.WriteLine("Windows did not confirm the device change"); return 1; }
+        Console.WriteLine($"Default device: {device.FriendlyName}");
+        return 0;
     }
 
-    private static void SetDeviceByName(IAudioDeviceService deviceService, string name)
+    private static int SetDeviceByName(IAudioDeviceService devices, string name)
     {
-        var devices = deviceService.GetOutputDevices();
-        var match = devices.FirstOrDefault(d => 
-            d.FriendlyName.Contains(name, StringComparison.OrdinalIgnoreCase) && d.IsConnected);
-
-        if (match == null)
-        {
-            Console.WriteLine($"Error: No connected device found matching '{name}'");
-            return;
-        }
-
-        if (deviceService.SetDefaultDevice(match.Id))
-        {
-            Console.WriteLine($"Default device set to: {match.FriendlyName}");
-        }
-        else
-        {
-            Console.WriteLine("Failed to set default device");
-        }
+        var matches = devices.GetOutputDevices().Where(d => d.IsConnected && d.FriendlyName.Contains(name, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count != 1) { Console.Error.WriteLine("Name must match exactly one connected device; use its ID otherwise"); return 1; }
+        return SetDefaultDevice(devices, matches[0].Id);
     }
 
     private static void ListProfiles(AppSettings settings)
@@ -221,43 +182,20 @@ class Program
         }
     }
 
-    private static void CycleDevice(IAudioDeviceService deviceService)
+    private static int CycleDevice(IAudioDeviceService devices)
     {
-        var devices = deviceService.GetOutputDevices().Where(d => d.IsConnected).ToList();
-        var current = deviceService.GetDefaultDevice();
-        var currentIndex = devices.FindIndex(d => d.Id == current?.Id);
-        var nextIndex = (currentIndex + 1) % devices.Count;
-        
-        var next = devices[nextIndex];
-        if (deviceService.SetDefaultDevice(next.Id))
-        {
-            Console.WriteLine($"Switched to: {next.FriendlyName}");
-        }
-        else
-        {
-            Console.WriteLine("Failed to cycle device");
-        }
+        var connected = devices.GetOutputDevices().Where(d => d.IsConnected).ToList();
+        var current = devices.GetDefaultDevice();
+        var target = DeviceCycle.Next(connected, current, d => d.Id, current?.Id);
+        if (target == null) { Console.Error.WriteLine("No connected output device"); return 1; }
+        return SetDefaultDevice(devices, target.Id);
     }
 
-    private static void ForceHeadset(IAudioDeviceService deviceService)
+    private static int ForceHeadset(IAudioDeviceService devices)
     {
-        var headset = deviceService.GetOutputDevices()
-            .FirstOrDefault(d => d.Type == DeviceType.Headset && d.IsConnected);
-
-        if (headset == null)
-        {
-            Console.WriteLine("No connected headset found");
-            return;
-        }
-
-        if (deviceService.SetDefaultDevice(headset.Id))
-        {
-            Console.WriteLine($"Switched to headset: {headset.FriendlyName}");
-        }
-        else
-        {
-            Console.WriteLine("Failed to switch to headset");
-        }
+        var target = devices.GetOutputDevices().FirstOrDefault(d => d.IsConnected && d.Type is DeviceType.Headset or DeviceType.Bluetooth);
+        if (target == null) { Console.Error.WriteLine("No connected headset"); return 1; }
+        return SetDefaultDevice(devices, target.Id);
     }
 
     private static string Truncate(string value, int maxLength)

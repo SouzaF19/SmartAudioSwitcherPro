@@ -37,13 +37,13 @@ public class SystemTrayService : ISystemTrayService, IDisposable
     {
         var icon = type switch
         {
-            NotificationType.Warning => System.Windows.Forms.ToolTipIcon.Warning,
-            NotificationType.Error => System.Windows.Forms.ToolTipIcon.Error,
-            NotificationType.Success => System.Windows.Forms.ToolTipIcon.Info,
-            _ => System.Windows.Forms.ToolTipIcon.Info
+            NotificationType.Warning => BalloonIcon.Warning,
+            NotificationType.Error => BalloonIcon.Error,
+            NotificationType.Success => BalloonIcon.Info,
+            _ => BalloonIcon.Info
         };
 
-        _taskbarIcon.ShowBalloonTip(title, message, (BalloonIcon)icon);
+        _taskbarIcon.ShowBalloonTip(title, message, icon);
     }
 
     public void UpdateIcon(bool isActive, string? tooltip = null)

@@ -51,6 +51,7 @@ public class RoutingCanvas : Canvas
 
     public void ClearConnections()
     {
+        CancelConnection();
         foreach (var conn in _connections.ToList())
         {
             Children.Remove(conn.Line);
@@ -120,7 +121,9 @@ public class RoutingCanvas : Canvas
     {
         if (_connectionSource != null && _connectionSource != target)
         {
-            ConnectNodes(_connectionSource, target);
+            var source = _connectionSource;
+            CancelConnection();
+            ConnectNodes(source, target);
         }
         else
         {

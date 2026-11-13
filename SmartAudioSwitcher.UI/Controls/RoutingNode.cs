@@ -127,7 +127,7 @@ public class RoutingNode : UserControl
 
     private static void OnNodeTypeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        if (d is RoutingNode node)
+        if (d is RoutingNode node && node._border != null)
         {
             node._border.Background = GetBackgroundForType(node.NodeType);
             node._border.BorderBrush = GetBorderBrushForType(node.NodeType);
